@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTC AI Exam Generator v3</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@300;400;600;700&display=swap');
+
+:root {
+  --navy:#0d1b3e; --gold:#c8922a; --gold-light:#f0b84a;
+  --cream:#fdf8f0; --white:#ffffff; --gray:#6b7280;
+  --border:#e5e0d5; --green:#166534; --red:#991b1b;
+  --shadow:0 4px 24px rgba(13,27,62,0.10);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Source Sans 3',sans-serif;background:var(--cream);color:var(--navy);min-height:100vh;}
+
+/* HEADER */
+header{background:var(--navy);color:#fff;position:relative;overflow:hidden;}
+header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--gold),var(--gold-light),var(--gold));}
+.header-inner{max-width:960px;margin:0 auto;padding:18px 20px 16px;display:flex;align-items:center;gap:14px;}
+.logo-circle{width:54px;height:54px;background:linear-gradient(135deg,var(--gold),var(--gold-light));border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:18px;font-weight:900;color:var(--navy);flex-shrink:0;}
+.header-text h1{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;}
+.header-text p{font-size:12px;color:rgba(255,255,255,0.75);margin-top:2px;}
+.ai-badge{margin-left:auto;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:var(--navy);font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;text-transform:uppercase;flex-shrink:0;}
+
+/* NAV TABS */
+.nav-tabs{background:var(--navy);border-bottom:1px solid rgba(255,255,255,0.1);}
+.nav-tabs-inner{max-width:960px;margin:0 auto;display:flex;padding:0 16px;}
+.nav-tab{padding:10px 18px;font-size:13px;font-weight:700;color:rgba(255,255,255,0.6);cursor:pointer;border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap;}
+.nav-tab:hover{color:rgba(255,255,255,0.9);}
+.nav-tab.active{color:var(--gold-light);border-bottom-color:var(--gold-light);}
+
+/* PAGES */
+.page{display:none;} .page.active{display:block;}
+main{max-width:960px;margin:0 auto;padding:22px 14px 80px;}
+
+/* CARD */
+.card{background:var(--white);border-radius:14px;border:1px solid var(--border);box-shadow:var(--shadow);padding:22px;margin-bottom:16px;}
+.card-title{font-family:'Playfair Display',serif;font-size:16px;font-weight:700;color:var(--navy);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.card-title .icon{width:28px;height:28px;background:var(--gold);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-style:normal;flex-shrink:0;}
+
+/* FORM */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;}
+@media(max-width:560px){.form-grid{grid-template-columns:1fr;}}
+.form-group{display:flex;flex-direction:column;gap:5px;}
+.form-group.full{grid-column:1/-1;}
+label{font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.5px;}
+select,input[type="text"],input[type="number"],input[type="password"],textarea{padding:10px 13px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;background:var(--cream);width:100%;font-family:'Source Sans 3',sans-serif;outline:none;transition:border-color .2s;}
+select:focus,input:focus,textarea:focus{border-color:var(--gold);}
+textarea{resize:vertical;min-height:90px;}
+
+/* API KEY */
+.api-key-row{display:flex;gap:10px;align-items:center;}
+.api-key-row input{flex:1;margin-top:0;}
+.btn-save-key{background:var(--navy);color:#fff;border:none;padding:11px 20px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;font-size:14px;}
+.btn-save-key:hover{background:#1a2d6b;}
+#keyStatus{font-size:12px;margin-top:5px;font-weight:700;min-height:18px;}
+#keyStatus.saved{color:var(--green);}  #keyStatus.loaded{color:#1d4ed8;}
+.api-info{background:#f0f4ff;border:1px solid #c7d9ff;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#1e3a8a;line-height:1.6;}
+.api-info a{color:#1d4ed8;font-weight:600;}
+
+/* QUESTION TYPE BUTTONS */
+.qtype-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+.qtype-btn{padding:8px 16px;border-radius:8px;border:2px solid var(--border);background:var(--cream);font-size:13px;font-weight:700;cursor:pointer;color:var(--gray);transition:all .15s;}
+.qtype-btn.active{border-color:var(--gold);background:#fff8ec;color:var(--navy);}
+
+/* UPLOAD ZONE */
+.upload-zone{border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:var(--cream);transition:border-color .2s;margin-top:8px;}
+.upload-zone:hover{border-color:var(--gold);}
+.upload-zone p{font-size:13px;color:var(--gray);}
+.file-item{display:flex;align-items:center;justify-content:space-between;background:#f0f4ff;border-radius:6px;padding:7px 10px;font-size:13px;margin-top:5px;}
+.file-item button{background:#fee2e2;border:none;color:#b91c1c;border-radius:4px;padding:2px 8px;cursor:pointer;font-weight:700;font-size:12px;}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;border:none;transition:opacity .2s;}
+.btn:hover{opacity:.88;}
+.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-light));color:var(--navy);box-shadow:0 3px 10px rgba(200,146,42,.3);}
+.btn-navy{background:var(--navy);color:#fff;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-red{background:#dc2626;color:#fff;}
+.btn-outline{background:#fff;border:2px solid var(--navy);color:var(--navy);}
+.btn-amber{background:#f59e0b;color:#fff;}
+.btn-full{width:100%;justify-content:center;padding:14px 24px;font-size:16px;font-family:'Playfair Display',serif;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* ACTION BAR (appears after generation) */
+#action-bar{display:none;background:var(--white);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow);}
+.action-bar-title{font-weight:700;font-size:14px;color:var(--navy);margin-bottom:12px;}
+.action-bar-btns{display:flex;flex-wrap:wrap;gap:10px;}
+
+/* LOADER */
+.loader{display:none;text-align:center;padding:28px;}
+.loader.active{display:block;}
+.spinner{width:40px;height:40px;border:4px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#loaderMsg{font-size:14px;color:var(--navy);font-weight:600;}
+
+.error-box{display:none;background:#fee2e2;border:1px solid #fca5a5;color:var(--red);padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px;}
+.error-box.active{display:block;}
+
+/* EXAM */
+#exam-container,#results-section{display:none;}
+#exam-container.active,#results-section.active{display:block;}
+.timer-bar{position:sticky;top:0;background:var(--navy);color:#fff;padding:10px 20px;border-radius:8px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;font-weight:700;z-index:100;}
+#exam-paper{border:1px solid var(--border);padding:26px;background:#fff;border-radius:8px;}
+.exam-title-bar{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:12px;margin-bottom:20px;}
+.exam-title-bar h2{font-family:'Playfair Display',serif;font-size:18px;}
+.exam-meta{font-size:13px;color:var(--gray);margin-top:4px;}
+.question-block{margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #eee;}
+.q-text{font-weight:700;margin-bottom:10px;font-size:15px;}
+.q-options{list-style:none;padding-left:4px;}
+.q-options li{margin-bottom:7px;padding:8px 12px;border-radius:6px;border:1px solid #e5e0d5;cursor:pointer;transition:background .15s;font-size:14px;}
+.q-options li:hover{background:#f0f4ff;}
+.q-options li.selected{background:#dbeafe;border-color:#3b82f6;}
+.q-options li.correct{background:#dcfce7;border-color:#22c55e;color:#15803d;font-weight:700;}
+.q-options li.wrong{background:#fee2e2;border-color:#ef4444;color:#b91c1c;}
+.q-answer-input{width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-family:'Source Sans 3',sans-serif;font-size:14px;background:var(--cream);margin-top:6px;outline:none;}
+.q-answer-input:focus{border-color:var(--gold);}
+.btn-submit{display:block;width:100%;max-width:300px;margin:24px auto 0;background:var(--green);color:#fff;border:none;padding:14px;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;}
+
+/* RESULTS */
+.results-slip{background:#fff;border:2px solid var(--navy);border-radius:10px;padding:26px;max-width:600px;margin:0 auto 22px;box-shadow:var(--shadow);}
+.slip-header{text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:16px;}
+.slip-header h2{font-family:'Playfair Display',serif;font-size:17px;}
+.slip-row{display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;}
+.slip-row span:first-child{font-weight:700;color:var(--gray);}
+.score-box{text-align:center;font-size:42px;font-weight:900;color:var(--navy);margin:16px 0;padding:14px;background:#fdf8f0;border-radius:8px;font-family:'Playfair Display',serif;}
+.grade-badge{display:inline-block;padding:6px 18px;border-radius:20px;font-weight:700;font-size:15px;}
+.grade-distinction{background:#dcfce7;color:#15803d;}
+.grade-merit{background:#dbeafe;color:#1d4ed8;}
+.grade-credit{background:#fef3c7;color:#92400e;}
+.grade-pass{background:#f3f4f6;color:#374151;}
+.grade-fail{background:#fee2e2;color:#b91c1c;}
+
+/* QUESTION BANK */
+.bank-subject-group{margin-bottom:24px;}
+.bank-subject-header{background:linear-gradient(135deg,var(--navy),#1a2d6b);color:#fff;padding:12px 18px;border-radius:10px 10px 0 0;display:flex;justify-content:space-between;align-items:center;}
+.bank-subject-header h3{font-family:'Playfair Display',serif;font-size:15px;font-weight:700;}
+.bank-subject-body{border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;overflow:hidden;}
+.bank-exam-item{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;}
+.bank-exam-item:last-child{border-bottom:none;}
+.bank-exam-item:hover{background:#fdf8f0;}
+.bank-exam-info{flex:1;}
+.bank-exam-title{font-weight:700;font-size:14px;color:var(--navy);}
+.bank-exam-meta{font-size:12px;color:var(--gray);margin-top:2px;}
+.bank-exam-actions{display:flex;gap:6px;flex-shrink:0;}
+.bank-btn{padding:5px 11px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .15s;}
+.bank-btn:hover{opacity:.8;}
+.bank-btn-load{background:#dbeafe;color:#1d4ed8;}
+.bank-btn-edit{background:#fef3c7;color:#92400e;}
+.bank-btn-publish{background:#dcfce7;color:#15803d;}
+.bank-btn-del{background:#fee2e2;color:#b91c1c;}
+.bank-empty{text-align:center;padding:40px 20px;color:var(--gray);}
+.bank-empty .e-icon{font-size:48px;margin-bottom:12px;}
+
+/* MODAL OVERLAY */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay.active{display:flex;}
+.modal{background:#fff;border-radius:16px;padding:24px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.modal-title{font-family:'Playfair Display',serif;font-size:17px;font-weight:700;color:var(--navy);}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--gray);padding:4px 8px;}
+.modal-close:hover{color:var(--red);}
+
+/* TOAST */
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:rgba(13,27,62,.92);color:#fff;padding:10px 22px;border-radius:24px;font-size:14px;font-weight:700;z-index:9999;display:none;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,.3);}
+
+/* PRINT */
+@media print{
+  header,.nav-tabs,.card,#action-bar,#exam-container,#results-section,.modal-overlay,
+  .btn-submit,#loaderMsg,#toast{display:none!important;}
+  body.print-student #print-student-exam{display:block!important;}
+  body.print-teacher #print-teacher-exam{display:block!important;}
+  body.print-results #results-section{display:block!important;}
+  .results-slip{border:2px solid #000;box-shadow:none;}
+  #print-student-exam,#print-teacher-exam{padding:20px;}
+  .print-q-block{margin-bottom:20px;page-break-inside:avoid;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo-circle">MTC</div>
+    <div class="header-text">
+      <h1>Mountain Tuition Centre</h1>
+      <p>AI Exam Generator v3 &nbsp;|&nbsp; Mr. F. Tembo &nbsp;|&nbsp; 0972619148</p>
+    </div>
+    <div class="ai-badge">✨ Gemini AI</div>
+  </div>
+</header>
+
+<!-- NAV TABS -->
+<div class="nav-tabs">
+  <div class="nav-tabs-inner">
+    <div class="nav-tab active" onclick="switchPage('gen')">🤖 Generate Exam</div>
+    <div class="nav-tab" onclick="switchPage('bank')">🗄️ Question Bank</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!--                   PAGE 1: GENERATE EXAM                     -->
+<!-- ============================================================ -->
+<div id="page-gen" class="page active">
+<main>
+
+  <!-- CARD 1: API KEY -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔑</span> Setup &amp; API Key</div>
+    <div class="api-info">
+      <strong>Get your FREE Gemini API Key:</strong><br>
+      1. Visit <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a> → Sign in with Google<br>
+      2. Click <strong>"Get API Key"</strong> → <strong>"Create API key"</strong><br>
+      3. Copy the key (starts with <code>AIzaSy…</code>) → Paste below → Click <strong>💾 Save Key</strong>
+    </div>
+    <div class="api-key-row">
+      <input type="password" id="apiKeyInput" placeholder="Paste Gemini API key here…" autocomplete="off"/>
+      <button class="btn-save-key" onclick="saveKey()">💾 Save Key</button>
+    </div>
+    <div id="keyStatus"></div>
+  </div>
+
+  <!-- CARD 2: EXAM SETTINGS -->
+  <div class="card">
+    <div class="card-title"><span class="icon">⚙️</span> Exam Settings</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Grade</label>
+        <select id="grade">
+          <option value="Grade 7">Grade 7</option>
+          <option value="Grade 8">Grade 8</option>
+          <option value="Grade 9">Grade 9</option>
+          <option value="Grade 10">Grade 10</option>
+          <option value="Grade 11">Grade 11</option>
+          <option value="Grade 12" selected>Grade 12</option>
+          <option value="GCE">GCE</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <select id="subject">
+          <option value="Biology">Biology</option>
+          <option value="Chemistry">Chemistry</option>
+          <option value="English Language">English Language</option>
+          <option value="English Literature">English Literature</option>
+          <option value="Geography">Geography</option>
+          <option value="History">History</option>
+          <option value="Mathematics">Mathematics</option>
+          <option value="Physics">Physics</option>
+          <option value="Science">Science</option>
+          <option value="Social Studies">Social Studies</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Topic / Subtopic</label>
+        <input type="text" id="topic" placeholder="e.g. Photosynthesis, Quadratic Equations, Comprehension…"/>
+      </div>
+      <div class="form-group full">
+        <label>Question Type <span style="font-size:10px;color:#9ca3af;text-transform:none;letter-spacing:0;">(Select ONE — generates that type only)</span></label>
+        <div class="qtype-grid">
+          <button class="qtype-btn active" onclick="setQType(this,'MCQ')">☑️ MCQ</button>
+          <button class="qtype-btn" onclick="setQType(this,'SA')">✍️ Short Answer</button>
+          <button class="qtype-btn" onclick="setQType(this,'TF')">✅ True/False</button>
+          <button class="qtype-btn" onclick="setQType(this,'Essay')">📄 Essay</button>
+        </div>
+        <input type="hidden" id="qtype" value="MCQ"/>
+      </div>
+      <div class="form-group">
+        <label>Difficulty</label>
+        <select id="difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard / GCE Level</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Number of Questions (max 100)</label>
+        <input type="number" id="num" value="10" min="1" max="100"/>
+      </div>
+      <div class="form-group">
+        <label>Time Limit (Minutes)</label>
+        <input type="number" id="timeLimit" value="15" min="1" max="180"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- CARD 3: UPLOAD & PASTE -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📂</span> Upload Documents or Paste Text <span style="font-size:12px;font-weight:400;color:var(--gray);font-family:'Source Sans 3',sans-serif;">(Optional)</span></div>
+    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+      <div style="font-size:28px;margin-bottom:6px;">📁</div>
+      <p><strong>Tap to upload files</strong></p>
+      <p>PDF · DOCX · Images (JPG, PNG) — multiple files allowed</p>
+      <input type="file" id="fileInput" accept=".pdf,.docx,.doc,image/*" multiple style="display:none;" onchange="handleFiles(event)"/>
+    </div>
+    <div id="fileList"></div>
+    <div class="form-group" style="margin-top:14px;">
+      <label>📋 Paste Text, Notes or Exam Content</label>
+      <textarea id="pasteText" placeholder="Paste any text here — notes, textbook paragraphs, past paper questions, lesson content…"></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+        <button onclick="document.getElementById('pasteText').value='';showToast('Text cleared!');" style="background:#fee2e2;color:#b91c1c;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">✕ Clear Text</button>
+      </div>
+    </div>
+    <div id="errorBox" class="error-box"></div>
+    <button class="btn btn-gold btn-full" id="genBtn" onclick="generateExam()">🚀 Generate Exam Questions</button>
+  </div>
+
+  <!-- ACTION BAR — appears after generation, OUTSIDE config cards -->
+  <div id="action-bar">
+    <div class="action-bar-title">✅ <span id="actionBarTitle">Questions generated!</span> — What would you like to do?</div>
+    <div class="action-bar-btns">
+      <button class="btn btn-navy" onclick="showStudentLogin()">▶️ Start Interactive Exam</button>
+      <button class="btn btn-amber" onclick="printExam('student')">🖨️ Print — Student Copy</button>
+      <button class="btn btn-outline" onclick="printExam('teacher')">📋 Print — Teacher Copy (Answers)</button>
+      <button class="btn btn-green" onclick="saveToBank()">🗄️ Save to Question Bank</button>
+      <button class="btn" style="background:#7c3aed;color:#fff;" onclick="publishInteractiveHTML()">📤 Publish Standalone HTML Exam</button>
+    </div>
+  </div>
+
+  <!-- LOADER -->
+  <div class="loader" id="loader">
+    <div class="spinner"></div>
+    <p id="loaderMsg">Generating exam questions… please wait.</p>
+  </div>
+
+  <!-- STUDENT LOGIN -->
+  <div class="card" id="student-card" style="display:none;">
+    <div class="card-title"><span class="icon">👤</span> Candidate Login</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Learner's Full Name</label>
+        <input type="text" id="studentName" placeholder="Enter full name"/>
+      </div>
+      <div class="form-group">
+        <label>Exam / Candidate Number</label>
+        <input type="text" id="examNumber" placeholder="e.g. MTC-2025-001"/>
+      </div>
+    </div>
+    <button class="btn btn-green btn-full" onclick="startExam()">▶️ Start Examination</button>
+  </div>
+
+  <!-- EXAM PAPER -->
+  <div id="exam-container">
+    <div class="timer-bar">
+      <span>👤 <span id="displayStudent"></span></span>
+      <span>⏱ <span id="timer">00:00</span></span>
+    </div>
+    <div id="exam-paper"></div>
+    <button class="btn-submit" onclick="submitExam()">✅ Submit Examination</button>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results-section">
+    <div class="results-slip">
+      <div class="slip-header">
+        <h2>MOUNTAIN TUITION CENTRE</h2>
+        <p>Official Candidate Results Slip</p>
+      </div>
+      <div class="slip-row"><span>Candidate Name:</span><span id="resName"></span></div>
+      <div class="slip-row"><span>Exam Number:</span><span id="resNo"></span></div>
+      <div class="slip-row"><span>Grade &amp; Subject:</span><span id="resSub"></span></div>
+      <div class="slip-row"><span>Topic Tested:</span><span id="resTop"></span></div>
+      <div class="slip-row"><span>Question Type:</span><span id="resType"></span></div>
+      <div class="score-box" id="scoreBox">0%</div>
+      <div style="text-align:center;margin-bottom:10px;"><span class="grade-badge" id="gradeBadge"></span></div>
+      <div class="slip-row"><span>Total Score:</span><span id="resFraction"></span></div>
+      <div class="slip-row"><span>Date:</span><span id="resDate"></span></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
+      <button class="btn btn-navy" onclick="printSlip()">🖨️ Print Results Slip</button>
+      <button class="btn btn-outline" onclick="scrollReview()">📖 Review Answers</button>
+      <button class="btn btn-outline" onclick="location.reload()">🏠 Back to Home</button>
+    </div>
+    <div id="review-paper" style="margin-top:22px;background:#fff;padding:20px;border-radius:10px;border:1px solid #ccc;"></div>
+  </div>
+
+</main>
+</div>
+
+<!-- ============================================================ -->
+<!--                   PAGE 2: QUESTION BANK                     -->
+<!-- ============================================================ -->
+<div id="page-bank" class="page">
+<main>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+    <h2 style="font-family:'Playfair Display',serif;font-size:20px;">🗄️ Question Bank</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="switchPage('gen')">+ Generate New</button>
+      <button class="btn btn-red" onclick="clearAllBank()" style="font-size:12px;padding:8px 14px;">🗑️ Clear All</button>
+    </div>
+  </div>
+  <div id="bank-container">
+    <!-- Rendered by JS -->
+  </div>
+</main>
+</div>
+
+<!-- ========== EDIT MODAL ========== -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="editModalTitle">Edit Exam</span>
+      <button class="modal-close" onclick="closeModal('editModal')">✕</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Exam Title / Topic</label>
+      <input type="text" id="editTopic"/>
+    </div>
+    <div class="form-grid" style="margin-top:0;">
+      <div class="form-group">
+        <label>Grade</label>
+        <select id="editGrade">
+          <option value="Grade 7">Grade 7</option><option value="Grade 8">Grade 8</option>
+          <option value="Grade 9">Grade 9</option><option value="Grade 10">Grade 10</option>
+          <option value="Grade 11">Grade 11</option><option value="Grade 12">Grade 12</option>
+          <option value="GCE">GCE</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <select id="editSubject">
+          <option>Biology</option><option>Chemistry</option>
+          <option>English Language</option><option>English Literature</option>
+          <option>Geography</option><option>History</option>
+          <option>Mathematics</option><option>Physics</option>
+          <option>Science</option><option>Social Studies</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:16px;">
+      <label style="font-size:11px;font-weight:700;color:var(--gray);text-transform:uppercase;">Questions (JSON — advanced)</label>
+      <textarea id="editQuestions" rows="8" style="margin-top:6px;font-size:12px;font-family:monospace;"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn btn-navy" onclick="saveEditedExam()">💾 Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== PRINT CONTAINERS (hidden) ========== -->
+<div id="print-student-exam" style="display:none;"></div>
+<div id="print-teacher-exam" style="display:none;"></div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let globalQuestions = [];
+let uploadedFiles = [];
+let selectedQType = 'MCQ';
+let studentAnswers = {};
+let studentTextAnswers = {};
+let countdown;
+let totalSeconds = 0;
+let examConfig = {};
+let editingBankId = null;
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function switchPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (page === 'bank') renderBank();
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function showToast(msg, ms) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.style.display = 'none', ms || 2500);
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// ============================================================
+// QUESTION TYPE
+// ============================================================
+function setQType(btn, type) {
+  document.querySelectorAll('.qtype-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedQType = type;
+  document.getElementById('qtype').value = type;
+}
+
+// ============================================================
+// FILE UPLOAD
+// ============================================================
+function handleFiles(e) {
+  uploadedFiles = uploadedFiles.concat(Array.from(e.target.files));
+  renderFileList(); e.target.value = '';
+}
+function renderFileList() {
+  const l = document.getElementById('fileList');
+  l.innerHTML = uploadedFiles.map((f,i) =>
+    `<div class="file-item"><span>📄 ${f.name} <span style="color:var(--gray);font-size:11px;">(${(f.size/1024).toFixed(1)} KB)</span></span>
+     <button onclick="removeFile(${i})">✕</button></div>`).join('');
+}
+function removeFile(i) { uploadedFiles.splice(i,1); renderFileList(); }
+function fileToBase64(f) {
+  return new Promise((res,rej) => { const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=()=>rej(new Error('read fail')); r.readAsDataURL(f); });
+}
+function fileToArrayBuffer(f) {
+  return new Promise((res,rej) => { const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(); r.readAsArrayBuffer(f); });
+}
+
+// ============================================================
+// API KEY
+// ============================================================
+function saveKey() {
+  const k = document.getElementById('apiKeyInput').value.trim();
+  if (!k) { showToast('⚠️ Paste your key first!'); return; }
+  if (!k.startsWith('AIza')) { showToast('⚠️ Key should start with AIzaSy…'); return; }
+  localStorage.setItem('mtc_key', k);
+  const s = document.getElementById('keyStatus');
+  s.textContent = '✅ Key saved! Loads automatically next time.'; s.className = 'saved';
+  showToast('✅ API Key saved!');
+}
+window.onload = () => {
+  const k = localStorage.getItem('mtc_key');
+  if (k) {
+    document.getElementById('apiKeyInput').value = k;
+    const s = document.getElementById('keyStatus');
+    s.textContent = '🔑 Saved key loaded automatically.'; s.className = 'loaded';
+  }
+};
+
+// ============================================================
+// BUILD TYPE PROMPT
+// ============================================================
+function buildTypePrompt(type, num) {
+  const m = {
+    MCQ:`Generate EXACTLY ${num} Multiple Choice Questions (MCQ ONLY — no other types).
+Each must have exactly 4 options labeled A, B, C, D.
+Format: [{"type":"MCQ","question":"...","options":["A. ...","B. ...","C. ...","D. ..."],"answer":"A"}]
+"answer" = the correct letter (A/B/C/D).`,
+    SA:`Generate EXACTLY ${num} Short Answer Questions (SHORT ANSWER ONLY).
+Format: [{"type":"SA","question":"...","answer":"Model answer here"}]`,
+    TF:`Generate EXACTLY ${num} True/False Questions (TRUE/FALSE ONLY).
+Format: [{"type":"TF","question":"Statement...","answer":"True"}]
+"answer" must be exactly "True" or "False".`,
+    Essay:`Generate EXACTLY ${num} Essay Questions (ESSAY ONLY).
+Format: [{"type":"Essay","question":"Discuss...","answer":"Key points: 1)... 2)... 3)..."}]`
+  };
+  return m[type] || m.MCQ;
+}
+
+// ============================================================
+// GENERATE EXAM
+// ============================================================
+async function generateExam() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  const topic = document.getElementById('topic').value.trim();
+  const grade = document.getElementById('grade').value;
+  const subject = document.getElementById('subject').value;
+  const num = Math.max(1, Math.min(100, parseInt(document.getElementById('num').value)||10));
+  const timeLimit = document.getElementById('timeLimit').value;
+  const difficulty = document.getElementById('difficulty').value;
+  const qtype = selectedQType;
+  const pasteText = document.getElementById('pasteText').value.trim();
+
+  if (!key) { showToast('❌ Enter and save your API key first.'); return; }
+  if (!topic && !pasteText && !uploadedFiles.length) { showToast('❌ Enter a topic, paste text, or upload a file.'); return; }
+
+  examConfig = { grade, subject, topic: topic||'Pasted Content', timeLimit, num, qtype };
+
+  const loader = document.getElementById('loader');
+  const loaderMsg = document.getElementById('loaderMsg');
+  const errorBox = document.getElementById('errorBox');
+  loader.classList.add('active');
+  errorBox.classList.remove('active');
+  document.getElementById('genBtn').disabled = true;
+  document.getElementById('action-bar').style.display = 'none';
+
+  // Build file parts
+  const fileParts = [];
+  for (const file of uploadedFiles) {
+    try {
+      if (file.type.includes('image')) {
+        fileParts.push({inline_data:{mime_type:file.type||'image/jpeg',data:await fileToBase64(file)}});
+      } else if (file.type==='application/pdf'||file.name.endsWith('.pdf')) {
+        fileParts.push({inline_data:{mime_type:'application/pdf',data:await fileToBase64(file)}});
+      } else if (file.name.endsWith('.docx')||file.name.endsWith('.doc')) {
+        const ab = await fileToArrayBuffer(file);
+        const res = await mammoth.extractRawText({arrayBuffer:ab});
+        fileParts.push({text:'Document:\n'+res.value.slice(0,12000)});
+      }
+    } catch(e){console.warn('File error:',e);}
+  }
+
+  const diffMap = {easy:'Grade 7–9, simple',medium:'Grade 10–11, moderate',hard:'Grade 12/GCE, challenging'};
+  const diffText = diffMap[difficulty]||diffMap.medium;
+  const BATCH = 30;
+  const totalBatches = Math.ceil(num/BATCH);
+  let allQs = [];
+  const MODEL = 'gemini-2.5-flash';
+  const URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
+
+  for (let b=0; b<totalBatches; b++) {
+    const bStart=b*BATCH+1, bEnd=Math.min((b+1)*BATCH,num), bCount=bEnd-bStart+1;
+    if (totalBatches>1) loaderMsg.textContent=`Generating batch ${b+1} of ${totalBatches} (questions ${bStart}–${bEnd})…`;
+
+    let ctx=[];
+    if (topic) ctx.push(`Topic: ${topic}`);
+    if (pasteText) ctx.push(`Source text:\n---\n${pasteText.slice(0,8000)}\n---`);
+    if (fileParts.length) ctx.push('Use uploaded file(s) as source material.');
+
+    const batchNote = totalBatches>1 ? `\nBatch ${b+1}/${totalBatches}. Generate questions ${bStart}–${bEnd} only.` : '';
+    const prompt = `You are an expert ECZ examiner for Mountain Tuition Centre, Zambia.
+Grade: ${grade} | Subject: ${subject}
+${ctx.join('\n')}
+Difficulty: ${diffText}
+${buildTypePrompt(qtype, bCount)}${batchNote}
+RULES: Return ONLY a valid JSON array starting with [ and ending with ]. No markdown. No backticks. No explanations. EXACTLY ${bCount} questions.`;
+
+    const parts=[...fileParts,{text:prompt}];
+    let success=false;
+    for (let attempt=1;attempt<=3;attempt++) {
+      try {
+        if (attempt>1){loaderMsg.textContent=`Batch ${b+1}: retry ${attempt}…`; await new Promise(r=>setTimeout(r,4000));}
+        const resp=await fetch(URL,{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({contents:[{parts}],generationConfig:{temperature:0.7,maxOutputTokens:32000}})});
+        if (!resp.ok){
+          const err=await resp.json().catch(()=>({}));
+          if (resp.status===429){loaderMsg.textContent='⏳ Rate limit — waiting 60s…'; await new Promise(r=>setTimeout(r,62000)); continue;}
+          throw new Error(`API error ${resp.status}: ${(err?.error?.message||'').slice(0,80)}`);
+        }
+        const data=await resp.json();
+        let text=(data?.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+        text=text.replace(/```json\s*/gi,'').replace(/```\s*/gi,'').trim();
+        const match=text.match(/\[[\s\S]*\]/);
+        if(!match) throw new Error('No JSON array found. Try fewer questions or simpler topic.');
+        const bqs=JSON.parse(match[0]);
+        if(!Array.isArray(bqs)||!bqs.length) throw new Error('Empty response from AI.');
+        allQs=allQs.concat(bqs); success=true; break;
+      } catch(e){
+        if(attempt>=3){
+          loader.classList.remove('active'); document.getElementById('genBtn').disabled=false;
+          if(allQs.length>0){showToast(`⚠️ Got ${allQs.length} of ${num} (batch ${b+1} failed)`,4000); break;}
+          errorBox.textContent='❌ '+e.message; errorBox.classList.add('active'); return;
+        }
+      }
+    }
+    if(!success&&allQs.length===0){loader.classList.remove('active');document.getElementById('genBtn').disabled=false;return;}
+    if(b<totalBatches-1) await new Promise(r=>setTimeout(r,2000));
+  }
+
+  if(!allQs.length){
+    loader.classList.remove('active'); document.getElementById('genBtn').disabled=false;
+    errorBox.textContent='❌ No questions generated.'; errorBox.classList.add('active'); return;
+  }
+
+  globalQuestions=allQs;
+  loader.classList.remove('active');
+  document.getElementById('genBtn').disabled=false;
+
+  // Show action bar (OUTSIDE any card that gets hidden)
+  document.getElementById('actionBarTitle').textContent=`${globalQuestions.length} questions ready for ${examConfig.grade} ${examConfig.subject} — ${examConfig.topic}`;
+  document.getElementById('action-bar').style.display='block';
+
+  // Build print docs
+  buildPrintDocs();
+  showToast(`✅ ${globalQuestions.length} questions generated!`);
+}
+
+// ============================================================
+// PRINT — FIXED: printBtns now in action-bar outside config
+// ============================================================
+function buildPrintDocs() {
+  const {grade,subject,topic,qtype}=examConfig;
+  const hdr=`<div style="text-align:center;border-bottom:2px solid #0d1b3e;padding-bottom:14px;margin-bottom:20px;">
+    <h2 style="font-size:18px;font-weight:900;font-family:'Playfair Display',serif;">MOUNTAIN TUITION CENTRE</h2>
+    <p style="font-size:13px;color:#555;">Mr. F. Tembo | 0972619148</p>
+    <h3 style="font-size:16px;margin-top:8px;">${grade} ${subject} — ${topic}</h3>
+    <p style="font-size:12px;color:#777;">Date: ${new Date().toLocaleDateString('en-GB')} | Questions: ${globalQuestions.length}</p>
+  </div>`;
+
+  // Student copy
+  let stuHTML=hdr+`<div style="display:flex;gap:30px;margin-bottom:18px;font-size:13px;">
+    <span>Name: _________________________________</span>
+    <span>Exam No: ____________</span></div>`;
+  globalQuestions.forEach((q,i)=>{
+    const qt=q.question.replace(/^\d+[\.\)\s]+/,'');
+    stuHTML+=`<div class="print-q-block" style="margin-bottom:18px;page-break-inside:avoid;">
+      <p style="font-weight:700;margin-bottom:8px;">${i+1}. ${qt}</p>`;
+    if(q.options){q.options.forEach(o=>{stuHTML+=`<p style="margin-left:16px;margin-bottom:4px;">${o}</p>`;});}
+    else if(qtype==='TF'){stuHTML+=`<p style="margin-left:16px;">True &nbsp;&nbsp;&nbsp;&nbsp; False</p>`;}
+    else{stuHTML+=`<p style="margin-left:16px;border-bottom:1px solid #ccc;min-height:28px;"></p>
+      <p style="margin-left:16px;border-bottom:1px solid #ccc;min-height:28px;margin-top:6px;"></p>`;}
+    stuHTML+=`</div>`;
+  });
+
+  // Teacher copy
+  let teaHTML=hdr+`<p style="font-weight:700;color:#c8922a;margin-bottom:14px;">📋 TEACHER'S COPY — WITH ANSWERS</p>`;
+  globalQuestions.forEach((q,i)=>{
+    const qt=q.question.replace(/^\d+[\.\)\s]+/,'');
+    teaHTML+=`<div class="print-q-block" style="margin-bottom:18px;page-break-inside:avoid;">
+      <p style="font-weight:700;margin-bottom:6px;">${i+1}. ${qt}</p>`;
+    if(q.options){
+      q.options.forEach(o=>{
+        const l=o.trim().charAt(0).toUpperCase();
+        const ok=l===(q.answer||'').trim().charAt(0).toUpperCase();
+        teaHTML+=`<p style="margin-left:16px;margin-bottom:3px;${ok?'color:#15803d;font-weight:700;':''}">${ok?'✓ ':''}${o}</p>`;
+      });
+    } else {
+      teaHTML+=`<p style="margin-left:16px;color:#15803d;font-weight:700;border-left:3px solid #15803d;padding-left:8px;">Answer: ${q.answer||'—'}</p>`;
+    }
+    teaHTML+=`</div>`;
+  });
+
+  document.getElementById('print-student-exam').innerHTML=stuHTML;
+  document.getElementById('print-teacher-exam').innerHTML=teaHTML;
+}
+
+function printExam(type) {
+  document.body.className='print-'+type;
+  window.print();
+  setTimeout(()=>document.body.className='',1000);
+}
+
+// ============================================================
+// SHOW STUDENT LOGIN
+// ============================================================
+function showStudentLogin() {
+  document.getElementById('student-card').style.display='block';
+  document.getElementById('student-card').scrollIntoView({behavior:'smooth'});
+}
+
+// ============================================================
+// START / TIMER / RENDER EXAM
+// ============================================================
+function startExam() {
+  const name=document.getElementById('studentName').value.trim();
+  const no=document.getElementById('examNumber').value.trim();
+  if(!name||!no){showToast('❌ Fill in your name and exam number!');return;}
+  document.getElementById('student-card').style.display='none';
+  document.getElementById('exam-container').classList.add('active');
+  document.getElementById('displayStudent').textContent=`${name} (${no})`;
+  studentAnswers={}; studentTextAnswers={};
+  renderExam();
+  startTimer(parseInt(examConfig.timeLimit));
+}
+function startTimer(min) {
+  totalSeconds=min*60;
+  const el=document.getElementById('timer');
+  countdown=setInterval(()=>{
+    const m=Math.floor(totalSeconds/60), s=totalSeconds%60;
+    el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    if(totalSeconds<=0){clearInterval(countdown);showToast('⏰ Time up! Submitting…',3000);setTimeout(submitExam,2000);}
+    totalSeconds--;
+  },1000);
+}
+function renderExam() {
+  const paper=document.getElementById('exam-paper');
+  let html=`<div class="exam-title-bar">
+    <h2>${examConfig.grade} ${examConfig.subject} Examination</h2>
+    <p class="exam-meta">Topic: ${examConfig.topic} &nbsp;|&nbsp; Questions: ${globalQuestions.length} &nbsp;|&nbsp; Type: ${examConfig.qtype}</p>
+  </div>`;
+  globalQuestions.forEach((q,i)=>{
+    const cq=q.question.replace(/^\d+[\.\)\s]+/,'');
+    html+=`<div class="question-block"><div class="q-text">${i+1}. ${cq}</div>`;
+    if(q.options){
+      html+=`<ul class="q-options">`;
+      q.options.forEach(o=>{const l=o.trim().charAt(0).toUpperCase();html+=`<li id="q${i}_${l}" onclick="selectAnswer(${i},'${l}')">${o}</li>`;});
+      html+=`</ul>`;
+    } else if(examConfig.qtype==='TF'){
+      html+=`<div style="display:flex;gap:10px;margin-top:8px;">
+        <button onclick="selectTF(${i},'True')" id="tf${i}_T" style="padding:10px 22px;border-radius:8px;border:2px solid #e5e0d5;background:#fdf8f0;font-weight:700;cursor:pointer;">True</button>
+        <button onclick="selectTF(${i},'False')" id="tf${i}_F" style="padding:10px 22px;border-radius:8px;border:2px solid #e5e0d5;background:#fdf8f0;font-weight:700;cursor:pointer;">False</button>
+      </div>`;
+    } else {
+      const rows=examConfig.qtype==='Essay'?5:2;
+      html+=`<textarea class="q-answer-input" rows="${rows}" id="text${i}" oninput="studentTextAnswers[${i}]=this.value" placeholder="${examConfig.qtype==='Essay'?'Write your essay here…':'Write your answer…'}"></textarea>`;
+    }
+    html+=`</div>`;
+  });
+  paper.innerHTML=html;
+}
+function selectAnswer(qi,l){
+  globalQuestions[qi].options.forEach(o=>{const el=document.getElementById(`q${qi}_${o.trim().charAt(0).toUpperCase()}`);if(el)el.classList.remove('selected');});
+  const el=document.getElementById(`q${qi}_${l}`);if(el)el.classList.add('selected');
+  studentAnswers[qi]=l;
+}
+function selectTF(qi,val){
+  const t=document.getElementById(`tf${qi}_T`),f=document.getElementById(`tf${qi}_F`);
+  t.style.borderColor=val==='True'?'#22c55e':'#e5e0d5'; t.style.background=val==='True'?'#dcfce7':'#fdf8f0';
+  f.style.borderColor=val==='False'?'#ef4444':'#e5e0d5'; f.style.background=val==='False'?'#fee2e2':'#fdf8f0';
+  studentAnswers[qi]=val;
+}
+
+// ============================================================
+// SUBMIT & RESULTS
+// ============================================================
+function submitExam(){
+  clearInterval(countdown);
+  let score=0; const qtype=examConfig.qtype;
+  if(qtype==='MCQ'){globalQuestions.forEach((q,i)=>{if(studentAnswers[i]===(q.answer||'').trim().charAt(0).toUpperCase())score++;});}
+  else if(qtype==='TF'){globalQuestions.forEach((q,i)=>{if(studentAnswers[i]===(q.answer||'').trim())score++;});}
+  else{globalQuestions.forEach((_,i)=>{if(studentTextAnswers[i]&&studentTextAnswers[i].trim())score++;});}
+  const total=globalQuestions.length, pct=Math.round(score/total*100);
+  let grade='',gc='';
+  if(pct>=80){grade='🌟 DISTINCTION';gc='grade-distinction';}
+  else if(pct>=70){grade='✅ MERIT';gc='grade-merit';}
+  else if(pct>=60){grade='📘 CREDIT';gc='grade-credit';}
+  else if(pct>=50){grade='✔️ PASS';gc='grade-pass';}
+  else{grade='❌ FAIL';gc='grade-fail';}
+  document.getElementById('resName').textContent=document.getElementById('studentName').value;
+  document.getElementById('resNo').textContent=document.getElementById('examNumber').value;
+  document.getElementById('resSub').textContent=`${examConfig.grade} — ${examConfig.subject}`;
+  document.getElementById('resTop').textContent=examConfig.topic;
+  document.getElementById('resType').textContent=qtype;
+  document.getElementById('scoreBox').textContent=`${pct}%`;
+  document.getElementById('resFraction').textContent=`${score} / ${total} Questions`;
+  document.getElementById('resDate').textContent=new Date().toLocaleDateString('en-GB');
+  const gb=document.getElementById('gradeBadge');gb.textContent=grade;gb.className=`grade-badge ${gc}`;
+  document.getElementById('exam-container').classList.remove('active');
+  document.getElementById('results-section').classList.add('active');
+  generateReview();
+}
+function generateReview(){
+  const paper=document.getElementById('review-paper'), qtype=examConfig.qtype;
+  let html=`<h2 style="text-align:center;margin-bottom:16px;font-family:'Playfair Display',serif;">📖 Exam Review & Corrections</h2>`;
+  globalQuestions.forEach((q,i)=>{
+    const cq=q.question.replace(/^\d+[\.\)\s]+/,'');
+    html+=`<div class="question-block"><div class="q-text">${i+1}. ${cq}</div>`;
+    if(q.options){
+      const cl=(q.answer||'').trim().charAt(0).toUpperCase(), sl=studentAnswers[i];
+      html+=`<ul class="q-options">`;
+      q.options.forEach(o=>{const l=o.trim().charAt(0).toUpperCase();let c='';if(l===cl)c='correct';else if(l===sl&&sl!==cl)c='wrong';html+=`<li class="${c}">${o}</li>`;});
+      html+=`</ul>`;
+    } else if(qtype==='TF'){
+      const ca=(q.answer||'').trim(),sa=studentAnswers[i]||'—';
+      html+=`<p style="margin-top:8px;">Your answer: <strong style="color:${sa===ca?'#15803d':'#b91c1c'}">${sa}</strong></p>
+        <p>Correct: <strong style="color:#15803d;">${ca}</strong></p>`;
+    } else {
+      const sa=studentTextAnswers[i]||'(No answer)';
+      html+=`<div style="margin-top:8px;padding:10px;background:#f9fafb;border-radius:6px;border-left:3px solid #3b82f6;"><p style="font-size:13px;font-weight:700;color:#555;">Your Answer:</p><p style="font-size:13px;">${sa}</p></div>
+        <div style="margin-top:6px;padding:10px;background:#dcfce7;border-radius:6px;border-left:3px solid #22c55e;"><p style="font-size:13px;font-weight:700;color:#15803d;">Model Answer:</p><p style="font-size:13px;color:#15803d;">${q.answer||'—'}</p></div>`;
+    }
+    html+=`</div>`;
+  });
+  paper.innerHTML=html;
+}
+function scrollReview(){document.getElementById('review-paper').scrollIntoView({behavior:'smooth'});}
+function printSlip(){document.body.className='print-results';window.print();setTimeout(()=>document.body.className='',1000);}
+
+// ============================================================
+// QUESTION BANK
+// ============================================================
+function getBankData() {
+  try { return JSON.parse(localStorage.getItem('mtc_qbank')||'[]'); } catch(e){return[];}
+}
+function saveBankData(data) { localStorage.setItem('mtc_qbank',JSON.stringify(data)); }
+
+function saveToBank() {
+  if(!globalQuestions.length){showToast('❌ No questions to save. Generate first.');return;}
+  const bank=getBankData();
+  const entry={
+    id:'mtc_'+Date.now(),
+    grade:examConfig.grade, subject:examConfig.subject,
+    topic:examConfig.topic, qtype:examConfig.qtype,
+    num:globalQuestions.length,
+    date:new Date().toLocaleDateString('en-GB'),
+    questions:globalQuestions
+  };
+  bank.unshift(entry);
+  saveBankData(bank);
+  showToast(`✅ ${entry.num} questions saved to Question Bank!`);
+}
+
+function renderBank() {
+  const bank=getBankData();
+  const container=document.getElementById('bank-container');
+  if(!bank.length){
+    container.innerHTML=`<div class="bank-empty"><div class="e-icon">🗄️</div><p style="font-weight:700;font-size:16px;">Question Bank is Empty</p><p style="margin-top:8px;font-size:14px;color:var(--gray);">Generate exam questions and click "🗄️ Save to Question Bank"</p></div>`;
+    return;
+  }
+
+  // Group by subject
+  const grouped={};
+  bank.forEach(e=>{if(!grouped[e.subject])grouped[e.subject]=[];grouped[e.subject].push(e);});
+
+  let html='';
+  Object.keys(grouped).sort().forEach(subject=>{
+    const items=grouped[subject];
+    html+=`<div class="bank-subject-group">
+      <div class="bank-subject-header">
+        <h3>📚 ${subject} <span style="font-size:12px;opacity:.75;">(${items.length} exam${items.length>1?'s':''})</span></h3>
+      </div>
+      <div class="bank-subject-body">`;
+    items.forEach(item=>{
+      html+=`<div class="bank-exam-item">
+        <div class="bank-exam-info">
+          <div class="bank-exam-title">${item.grade} ${item.subject} — ${item.topic}</div>
+          <div class="bank-exam-meta">📝 ${item.num} ${item.qtype} questions &nbsp;|&nbsp; 📅 ${item.date}</div>
+        </div>
+        <div class="bank-exam-actions">
+          <button class="bank-btn bank-btn-load" onclick="loadFromBank('${item.id}')">▶️ Start</button>
+          <button class="bank-btn bank-btn-publish" onclick="publishFromBank('${item.id}')">📤 Publish</button>
+          <button class="bank-btn bank-btn-edit" onclick="openEditModal('${item.id}')">✏️ Edit</button>
+          <button class="bank-btn bank-btn-del" onclick="deleteFromBank('${item.id}')">🗑️</button>
+        </div>
+      </div>`;
+    });
+    html+=`</div></div>`;
+  });
+  container.innerHTML=html;
+}
+
+function loadFromBank(id) {
+  const bank=getBankData();
+  const item=bank.find(e=>e.id===id);
+  if(!item){showToast('Item not found.');return;}
+  globalQuestions=item.questions;
+  examConfig={grade:item.grade,subject:item.subject,topic:item.topic,qtype:item.qtype,timeLimit:15,num:item.num};
+  buildPrintDocs();
+  switchPageDirect('gen');
+  document.getElementById('action-bar').style.display='block';
+  document.getElementById('actionBarTitle').textContent=`Loaded: ${item.grade} ${item.subject} — ${item.topic} (${item.num} questions)`;
+  showToast(`✅ Exam loaded! Use the action bar to start or print.`);
+  window.scrollTo(0,0);
+}
+
+function publishFromBank(id) {
+  const bank=getBankData();
+  const item=bank.find(e=>e.id===id);
+  if(!item){showToast('Item not found.');return;}
+  globalQuestions=item.questions;
+  examConfig={grade:item.grade,subject:item.subject,topic:item.topic,qtype:item.qtype,timeLimit:15,num:item.num};
+  publishInteractiveHTML();
+}
+
+function openEditModal(id) {
+  const bank=getBankData();
+  const item=bank.find(e=>e.id===id);
+  if(!item){showToast('Item not found.');return;}
+  editingBankId=id;
+  document.getElementById('editModalTitle').textContent=`✏️ Edit — ${item.subject}`;
+  document.getElementById('editTopic').value=item.topic;
+  document.getElementById('editGrade').value=item.grade;
+  document.getElementById('editSubject').value=item.subject;
+  document.getElementById('editQuestions').value=JSON.stringify(item.questions,null,2);
+  document.getElementById('editModal').classList.add('active');
+}
+
+function saveEditedExam() {
+  if(!editingBankId){closeModal('editModal');return;}
+  let questions;
+  try{questions=JSON.parse(document.getElementById('editQuestions').value);}
+  catch(e){showToast('❌ Invalid JSON in questions field. Fix and try again.',4000);return;}
+  const bank=getBankData();
+  const idx=bank.findIndex(e=>e.id===editingBankId);
+  if(idx<0){showToast('Item not found.');return;}
+  bank[idx].topic=document.getElementById('editTopic').value.trim()||bank[idx].topic;
+  bank[idx].grade=document.getElementById('editGrade').value;
+  bank[idx].subject=document.getElementById('editSubject').value;
+  bank[idx].questions=questions;
+  bank[idx].num=questions.length;
+  saveBankData(bank);
+  closeModal('editModal');
+  renderBank();
+  showToast('✅ Exam saved successfully!');
+}
+
+function deleteFromBank(id) {
+  if(!confirm('Delete this exam from the Question Bank?')) return;
+  const bank=getBankData().filter(e=>e.id!==id);
+  saveBankData(bank);
+  renderBank();
+  showToast('🗑️ Exam deleted.');
+}
+
+function clearAllBank() {
+  if(!confirm('Delete ALL exams from the Question Bank? This cannot be undone.')) return;
+  localStorage.removeItem('mtc_qbank');
+  renderBank();
+  showToast('🗑️ Question Bank cleared.');
+}
+
+function switchPageDirect(page) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.querySelectorAll('.nav-tab')[page==='gen'?0:1].classList.add('active');
+}
+
+// ============================================================
+// PUBLISH INTERACTIVE STANDALONE HTML
+// ============================================================
+function publishInteractiveHTML() {
+  if(!globalQuestions.length){ showToast('❌ No questions. Generate first or load from bank.'); return; }
+  const grade     = examConfig.grade    || 'Grade';
+  const subject   = examConfig.subject  || 'Subject';
+  const topic     = examConfig.topic    || 'Topic';
+  const qtype     = examConfig.qtype    || 'MCQ';
+  const tl        = parseInt(examConfig.timeLimit)||15;
+  const num       = globalQuestions.length;
+  const qsData    = JSON.stringify(globalQuestions);
+
+  /* ── CSS ─────────────────────────────────────────────────────── */
+  const css = [
+    "@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@400;600;700&display=swap');",
+    ":root{--navy:#0d1b3e;--gold:#c8922a;--gold-light:#f0b84a;--cream:#fdf8f0;--green:#166534;--red:#991b1b;--border:#e5e0d5;}",
+    "*{box-sizing:border-box;margin:0;padding:0;}",
+    "body{font-family:'Source Sans 3',sans-serif;background:var(--cream);color:var(--navy);min-height:100vh;}",
+    ".hdr{background:var(--navy);color:#fff;position:relative;}",
+    ".hdr::after{content:'';position:absolute;bottom:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--gold),var(--gold-light),var(--gold));}",
+    ".hdr-inner{max-width:800px;margin:0 auto;padding:16px 18px;display:flex;align-items:center;gap:14px;}",
+    ".logo{width:48px;height:48px;background:linear-gradient(135deg,var(--gold),var(--gold-light));border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:16px;font-weight:900;color:var(--navy);flex-shrink:0;}",
+    ".hdr h1{font-family:'Playfair Display',serif;font-size:17px;font-weight:700;}",
+    ".hdr p{font-size:12px;opacity:.75;margin-top:2px;}",
+    "main{max-width:800px;margin:0 auto;padding:24px 14px 60px;}",
+    ".scr{display:none;} .scr.active{display:block;}",
+    ".card{background:#fff;border-radius:14px;border:1px solid var(--border);padding:24px;margin-bottom:16px;box-shadow:0 4px 20px rgba(13,27,62,.08);}",
+    ".card h2{font-family:'Playfair Display',serif;font-size:20px;font-weight:900;margin-bottom:6px;color:var(--navy);}",
+    ".card p{font-size:14px;color:#6b7280;margin-bottom:16px;}",
+    "label{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;display:block;margin-bottom:5px;letter-spacing:.5px;}",
+    "input[type='text']{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;background:var(--cream);font-family:'Source Sans 3',sans-serif;outline:none;margin-bottom:14px;}",
+    "input:focus{border-color:var(--gold);}",
+    ".btn{width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;font-family:'Playfair Display',serif;}",
+    ".btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-light));color:var(--navy);box-shadow:0 3px 10px rgba(200,146,42,.3);}",
+    ".btn-green{background:var(--green);color:#fff;max-width:320px;display:block;margin:20px auto 0;}",
+    ".timer-bar{position:sticky;top:0;background:var(--navy);color:#fff;padding:10px 18px;border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;z-index:100;font-size:14px;}",
+    ".prog-wrap{height:5px;background:#e5e0d5;border-radius:3px;margin-bottom:14px;}",
+    ".prog-bar{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:3px;transition:width .3s;}",
+    ".exam-head{text-align:center;border-bottom:2px solid var(--navy);padding-bottom:12px;margin-bottom:20px;}",
+    ".exam-head h2{font-family:'Playfair Display',serif;font-size:18px;}",
+    ".exam-head p{font-size:13px;color:#6b7280;margin-top:3px;}",
+    ".q-block{margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #eee;}",
+    ".q-text{font-weight:700;margin-bottom:10px;font-size:15px;}",
+    ".q-opts{list-style:none;}",
+    ".q-opts li{margin-bottom:7px;padding:9px 13px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-size:14px;transition:all .15s;}",
+    ".q-opts li:hover{background:#f0f4ff;border-color:#93c5fd;}",
+    ".q-opts li.sel{background:#dbeafe;border-color:#3b82f6;font-weight:600;}",
+    ".q-opts li.correct{background:#dcfce7;border-color:#22c55e;color:var(--green);font-weight:700;}",
+    ".q-opts li.wrong{background:#fee2e2;border-color:#ef4444;color:var(--red);}",
+    ".q-ans{width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-family:'Source Sans 3',sans-serif;font-size:14px;background:var(--cream);outline:none;resize:vertical;margin-top:6px;}",
+    ".q-ans:focus{border-color:var(--gold);}",
+    ".tf-row{display:flex;gap:10px;margin-top:8px;}",
+    ".tf-btn{flex:1;padding:11px;border-radius:8px;border:2px solid var(--border);background:var(--cream);font-weight:700;cursor:pointer;font-size:14px;transition:all .15s;}",
+    ".slip{background:#fff;border:2px solid var(--navy);border-radius:12px;padding:26px;max-width:560px;margin:0 auto 20px;}",
+    ".slip-hdr{text-align:center;border-bottom:2px dashed #ccc;padding-bottom:12px;margin-bottom:16px;}",
+    ".slip-hdr h2{font-family:'Playfair Display',serif;font-size:17px;font-weight:900;}",
+    ".slip-row{display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;}",
+    ".slip-row span:first-child{font-weight:700;color:#6b7280;}",
+    ".score-box{text-align:center;font-size:44px;font-weight:900;font-family:'Playfair Display',serif;color:var(--navy);margin:14px 0;padding:14px;background:#fdf8f0;border-radius:8px;}",
+    ".grade-badge{display:inline-block;padding:6px 18px;border-radius:20px;font-weight:700;font-size:15px;margin-bottom:10px;}",
+    ".g-distinction{background:#dcfce7;color:#15803d;}",
+    ".g-merit{background:#dbeafe;color:#1d4ed8;}",
+    ".g-credit{background:#fef3c7;color:#92400e;}",
+    ".g-pass{background:#f3f4f6;color:#374151;}",
+    ".g-fail{background:#fee2e2;color:#b91c1c;}",
+    ".act-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px;}",
+    ".act-btn{padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;border:2px solid var(--navy);}",
+    ".act-btn.primary{background:var(--navy);color:#fff;}",
+    "@media print{.timer-bar,.act-btns,.btn{display:none!important;}.slip{border:2px solid #000;}}"
+  ].join('\n');
+
+  /* ── JavaScript (built as plain string — no template-literal nesting) ── */
+  const js = [
+    'var QS=' + qsData + ';',
+    'var QTYPE="' + qtype + '";',
+    'var TL=' + tl + ';',
+    'var sName="",sNo="",answers={},textAnswers={};',
+    'var secs=TL*60,cd;',
+    '',
+    'function go(id){',
+    '  document.querySelectorAll(".scr").forEach(function(s){s.classList.remove("active");});',
+    '  document.getElementById(id).classList.add("active");',
+    '  window.scrollTo(0,0);',
+    '}',
+    '',
+    'function startEx(){',
+    '  sName=document.getElementById("sName").value.trim();',
+    '  sNo=document.getElementById("sNo").value.trim();',
+    '  if(!sName||!sNo){alert("Please fill in both fields.");return;}',
+    '  document.getElementById("dispName").textContent=sName+" ("+sNo+")";',
+    '  renderPaper();',
+    '  startTimer();',
+    '  go("scr-exam");',
+    '}',
+    '',
+    'function startTimer(){',
+    '  var el=document.getElementById("timerEl");',
+    '  cd=setInterval(function(){',
+    '    var m=Math.floor(secs/60),s=secs%60;',
+    '    el.textContent=(m<10?"0":"")+m+":"+(s<10?"0":"")+s;',
+    '    if(secs<=0){clearInterval(cd);alert("Time is up! Your exam will be submitted.");submitEx();}',
+    '    secs--;',
+    '  },1000);',
+    '}',
+    '',
+    'function renderPaper(){',
+    '  var paper=document.getElementById("exam-paper");',
+    '  var html="<div class=\\"exam-head\\"><h2>' + grade.replace(/"/g,'') + ' ' + subject.replace(/"/g,'') + ' Examination</h2><p>' + topic.replace(/"/g,'') + ' | "+QS.length+" Questions | Type: "+QTYPE+"</p></div>";',
+    '  QS.forEach(function(q,i){',
+    '    var cq=q.question.replace(/^\\d+[.)\\s]+/,"");',
+    '    html+="<div class=\\"q-block\\"><div class=\\"q-text\\">"+(i+1)+". "+cq+"</div>";',
+    '    if(q.options){',
+    '      html+="<ul class=\\"q-opts\\">";',
+    '      q.options.forEach(function(o){',
+    '        var l=o.trim().charAt(0).toUpperCase();',
+    '        html+="<li id=\\"q"+i+"_"+l+"\\" onclick=\\"selAns("+i+",\'"+l+"\')\\" >"+o+"</li>";',
+    '      });',
+    '      html+="</ul>";',
+    '    } else if(QTYPE==="TF"){',
+    '      html+="<div class=\\"tf-row\\">"',
+    '           +"<button class=\\"tf-btn\\" id=\\"tfT"+i+"\\" onclick=\\"selTF("+i+",\'True\')\\">True</button>"',
+    '           +"<button class=\\"tf-btn\\" id=\\"tfF"+i+"\\" onclick=\\"selTF("+i+",\'False\')\\">False</button>"',
+    '           +"</div>";',
+    '    } else {',
+    '      var rows=QTYPE==="Essay"?5:2;',
+    '      html+="<textarea class=\\"q-ans\\" rows=\\""+rows+"\\" id=\\"ta"+i+"\\" oninput=\\"textAnswers["+i+"]=this.value\\" placeholder=\\"Write your answer here…\\"></textarea>";',
+    '    }',
+    '    html+="</div>";',
+    '  });',
+    '  paper.innerHTML=html;',
+    '  updateProg(0);',
+    '}',
+    '',
+    'function updateProg(i){',
+    '  var p=Math.round((i+1)/QS.length*100);',
+    '  document.getElementById("progBar").style.width=p+"%";',
+    '  document.getElementById("progTxt").textContent=(i+1)+"/"+QS.length;',
+    '}',
+    '',
+    'function selAns(qi,l){',
+    '  if(QS[qi]&&QS[qi].options){',
+    '    QS[qi].options.forEach(function(o){',
+    '      var el=document.getElementById("q"+qi+"_"+o.trim().charAt(0).toUpperCase());',
+    '      if(el)el.classList.remove("sel");',
+    '    });',
+    '  }',
+    '  var el=document.getElementById("q"+qi+"_"+l);',
+    '  if(el)el.classList.add("sel");',
+    '  answers[qi]=l;',
+    '  updateProg(qi);',
+    '}',
+    '',
+    'function selTF(qi,val){',
+    '  var tBtn=document.getElementById("tfT"+qi);',
+    '  var fBtn=document.getElementById("tfF"+qi);',
+    '  if(tBtn){tBtn.style.borderColor=val==="True"?"#22c55e":"#e5e0d5";tBtn.style.background=val==="True"?"#dcfce7":"#fdf8f0";}',
+    '  if(fBtn){fBtn.style.borderColor=val==="False"?"#ef4444":"#e5e0d5";fBtn.style.background=val==="False"?"#fee2e2":"#fdf8f0";}',
+    '  answers[qi]=val;',
+    '  updateProg(qi);',
+    '}',
+    '',
+    'function submitEx(){',
+    '  clearInterval(cd);',
+    '  var score=0,total=QS.length;',
+    '  if(QTYPE==="MCQ"){',
+    '    QS.forEach(function(q,i){if(answers[i]===(q.answer||"").trim().charAt(0).toUpperCase())score++;});',
+    '  } else if(QTYPE==="TF"){',
+    '    QS.forEach(function(q,i){if(answers[i]===(q.answer||"").trim())score++;});',
+    '  } else {',
+    '    QS.forEach(function(_,i){if(textAnswers[i]&&textAnswers[i].trim())score++;});',
+    '  }',
+    '  var pct=Math.round(score/total*100);',
+    '  var grade="",gc="";',
+    '  if(pct>=80){grade="DISTINCTION";gc="g-distinction";}',
+    '  else if(pct>=70){grade="MERIT";gc="g-merit";}',
+    '  else if(pct>=60){grade="CREDIT";gc="g-credit";}',
+    '  else if(pct>=50){grade="PASS";gc="g-pass";}',
+    '  else{grade="FAIL";gc="g-fail";}',
+    '  document.getElementById("rName").textContent=sName;',
+    '  document.getElementById("rNo").textContent=sNo;',
+    '  document.getElementById("rPct").textContent=pct+"%";',
+    '  document.getElementById("rFrac").textContent=score+" / "+total+" Questions";',
+    '  document.getElementById("rDate").textContent=new Date().toLocaleDateString("en-GB");',
+    '  var gb=document.getElementById("rGrade");',
+    '  gb.textContent=grade; gb.className="grade-badge "+gc;',
+    '  go("scr-results");',
+    '  buildReview();',
+    '}',
+    '',
+    'function buildReview(){',
+    '  var sec=document.getElementById("review-sec");',
+    '  var html="<h2 style=\'text-align:center;margin-bottom:16px;font-family:Playfair Display,serif;\'>Review &amp; Corrections</h2>";',
+    '  QS.forEach(function(q,i){',
+    '    var cq=q.question.replace(/^\\d+[.)\\s]+/,"");',
+    '    html+="<div class=\\"q-block\\"><div class=\\"q-text\\">"+(i+1)+". "+cq+"</div>";',
+    '    if(q.options){',
+    '      var cl=(q.answer||"").trim().charAt(0).toUpperCase(),sl=answers[i];',
+    '      html+="<ul class=\\"q-opts\\">";',
+    '      q.options.forEach(function(o){',
+    '        var l=o.trim().charAt(0).toUpperCase(),c="";',
+    '        if(l===cl)c="correct"; else if(l===sl&&sl!==cl)c="wrong";',
+    '        html+="<li class=\\""+c+"\\" style=\\"cursor:default\\">"+o+"</li>";',
+    '      });',
+    '      html+="</ul>";',
+    '    } else if(QTYPE==="TF"){',
+    '      var ca=(q.answer||"").trim(),sa=answers[i]||"—";',
+    '      html+="<p style=\\"margin-top:8px\\">Your answer: <strong style=\\"color:"+(sa===ca?"#15803d":"#b91c1c")+"\\">" +sa+"</strong></p>";',
+    '      html+="<p>Correct: <strong style=\\"color:#15803d\\">"+ca+"</strong></p>";',
+    '    } else {',
+    '      var sa=textAnswers[i]||"(No answer written)";',
+    '      html+="<div style=\\"margin-top:8px;padding:10px;background:#f9fafb;border-radius:6px;border-left:3px solid #3b82f6;font-size:13px\\"><strong>Your Answer:</strong><p>"+sa+"</p></div>";',
+    '      html+="<div style=\\"margin-top:6px;padding:10px;background:#dcfce7;border-radius:6px;border-left:3px solid #22c55e;font-size:13px;color:#15803d\\"><strong>Model Answer:</strong><p>"+(q.answer||"—")+"</p></div>";',
+    '    }',
+    '    html+="</div>";',
+    '  });',
+    '  sec.innerHTML=html;',
+    '}',
+  ].join('\n');
+
+  /* ── HTML Body ─────────────────────────────────────────────── */
+  const loginHTML = [
+    '<div id="scr-login" class="scr active">',
+    '  <div class="card" style="max-width:480px;margin:30px auto;text-align:center;">',
+    '    <div style="font-family:\'Playfair Display\',serif;font-size:22px;font-weight:900;color:var(--navy);">' + grade + ' ' + subject + '</div>',
+    '    <div style="font-size:14px;color:#6b7280;margin:6px 0 20px;">' + topic + ' &nbsp;|&nbsp; ' + num + ' Questions &nbsp;|&nbsp; ' + tl + ' min</div>',
+    '    <label style="text-align:left;">Full Name</label>',
+    '    <input type="text" id="sName" placeholder="Enter your full name"/>',
+    '    <label style="text-align:left;">Exam / Candidate Number</label>',
+    '    <input type="text" id="sNo" placeholder="e.g. MTC-2025-001"/>',
+    '    <button class="btn btn-gold" onclick="startEx()">&#9654; Start Examination</button>',
+    '  </div>',
+    '</div>'
+  ].join('\n');
+
+  const examHTML = [
+    '<div id="scr-exam" class="scr">',
+    '  <div class="timer-bar">',
+    '    <span>&#128100; <span id="dispName"></span></span>',
+    '    <span style="font-size:12px;opacity:.8;">Q <span id="progTxt">1/' + num + '</span></span>',
+    '    <span>&#9200; <span id="timerEl">00:00</span></span>',
+    '  </div>',
+    '  <div class="prog-wrap"><div class="prog-bar" id="progBar" style="width:0%"></div></div>',
+    '  <div id="exam-paper"></div>',
+    '  <button class="btn btn-green" onclick="submitEx()">&#10003; Submit Examination</button>',
+    '</div>'
+  ].join('\n');
+
+  const resultsHTML = [
+    '<div id="scr-results" class="scr">',
+    '  <div class="slip">',
+    '    <div class="slip-hdr"><h2>MOUNTAIN TUITION CENTRE</h2><p>Official Candidate Results Slip</p></div>',
+    '    <div class="slip-row"><span>Candidate:</span><span id="rName"></span></div>',
+    '    <div class="slip-row"><span>Exam No:</span><span id="rNo"></span></div>',
+    '    <div class="slip-row"><span>Grade &amp; Subject:</span><span>' + grade + ' &mdash; ' + subject + '</span></div>',
+    '    <div class="slip-row"><span>Topic:</span><span>' + topic + '</span></div>',
+    '    <div class="slip-row"><span>Type:</span><span>' + qtype + '</span></div>',
+    '    <div class="score-box" id="rPct">0%</div>',
+    '    <div style="text-align:center;margin-bottom:10px;"><span class="grade-badge" id="rGrade"></span></div>',
+    '    <div class="slip-row"><span>Score:</span><span id="rFrac"></span></div>',
+    '    <div class="slip-row"><span>Date:</span><span id="rDate"></span></div>',
+    '  </div>',
+    '  <div class="act-btns">',
+    '    <button class="act-btn primary" onclick="window.print()">&#128438; Print Results Slip</button>',
+    '    <button class="act-btn" onclick="document.getElementById(\'review-sec\').scrollIntoView({behavior:\'smooth\'})">&#128214; Review Answers</button>',
+    '    <button class="act-btn" onclick="location.reload()">&#8635; Retake Exam</button>',
+    '  </div>',
+    '  <div id="review-sec" style="margin-top:22px;background:#fff;padding:20px;border-radius:10px;border:1px solid #ccc;"></div>',
+    '</div>'
+  ].join('\n');
+
+  /* ── Assemble complete HTML ───────────────────────────────── */
+  const parts = [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<title>' + grade + ' ' + subject + ' — ' + topic + ' | MTC</title>',
+    '<style>' + css + '</style>',
+    '</head>',
+    '<body>',
+    '<div class="hdr"><div class="hdr-inner">',
+    '  <div class="logo">MTC</div>',
+    '  <div><h1>Mountain Tuition Centre</h1><p>Mr. F. Tembo &nbsp;|&nbsp; 0972619148</p></div>',
+    '</div></div>',
+    '<main>',
+    loginHTML,
+    examHTML,
+    resultsHTML,
+    '</main>',
+    '<script>',
+    js,
+    '<' + '/script>',   // ← split so outer parser does not close outer <script>
+    '</body>',
+    '</html>'
+  ];
+
+  const html = parts.join('\n');
+
+  /* ── Download ─────────────────────────────────────────────── */
+  try {
+    const blob = new Blob([html], {type: 'text/html;charset=utf-8'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'MTC_' + grade.replace(/\s+/g,'_') + '_' + subject.replace(/\s+/g,'_') + '_' + topic.replace(/[^a-z0-9]/gi,'_').slice(0,25) + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('✅ Standalone HTML exam downloaded! Share the file with students.');
+  } catch(err) {
+    showToast('❌ Download failed: ' + err.message, 5000);
+    console.error('Publish error:', err);
+  }
+}
+
+
+</script>
+</body>
+</html>
