@@ -3042,45 +3042,350 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  else { el.className = ""; }\n';
   sc += '}\n\n';
 
-  // submitExam
-    // ── AI Marking function ───────────────────────────────────────────────────
-  sc += 'function aiMarkQuestion(q, studentAns, onDone) {\n';
-  sc += '  if (!AI_KEY || !studentAns || !studentAns.trim()) {\n';
-  sc += '    onDone({ score: 0, feedback: "No answer provided — 0 marks awarded." }); return;\n';
+  // ── AUTO-MARKING ENGINE ─────────────────────────────────────
+  // Full synonym databases for ECZ/Cambridge-style marking
+  sc += '// ============================================================\n';
+  sc += '// AUTO-MARKING ENGINE — ECZ/Cambridge style with synonym lists\n';
+  sc += '// ============================================================\n\n';
+
+  // ── Main Synonym Database ────────────────────────────────────
+  sc += 'var SYNONYMS = {\n';
+  sc += '  // Mathematical terms\n';
+  sc += '  "add": ["add", "plus", "sum", "total", "combine", "increase", "addition", "together", "and", "in addition"],\n';
+  sc += '  "subtract": ["subtract", "minus", "difference", "decrease", "take away", "deduct", "less", "remove", "substract", "deduction"],\n';
+  sc += '  "multiply": ["multiply", "times", "product", "multiplication", "multiple", "double", "triple", "multiplied by", "x", "multiply by"],\n';
+  sc += '  "divide": ["divide", "division", "quotient", "share", "split", "distribute", "divided by", "into", "fraction", "ratio"],\n';
+  sc += '  "equal": ["equal", "equals", "equivalent", "same", "identical", "is", "are", "equal to", "exactly", "matches"],\n';
+  sc += '  "greater": ["greater", "more", "larger", "bigger", "higher", "exceeds", "above", "over", "superior", "surpasses"],\n';
+  sc += '  "less": ["less", "smaller", "lower", "fewer", "under", "below", "inferior", "minor", "reduced", "diminished"],\n';
+  sc += '  "area": ["area", "region", "surface", "size", "space", "measure", "scope", "extent", "breadth", "dimension"],\n';
+  sc += '  "perimeter": ["perimeter", "boundary", "border", "edge", "outline", "circumference", "distance around", "enclosure", "ring", "margin"],\n';
+  sc += '  "volume": ["volume", "capacity", "amount", "quantity", "mass", "size", "content", "measure", "bulk", "magnitude"],\n';
+  sc += '  "angle": ["angle", "degree", "slope", "tilt", "inclination", "turn", "corner", "intersection", "gradient", "pitch"],\n';
+  sc += '  "triangle": ["triangle", "three-sided", "trilateral", "triangular", "tri", "delta", "pyramid", "prism"],\n';
+  sc += '  "square": ["square", "four-sided", "quadrilateral", "quad", "equal-sided", "box", "block", "cube"],\n';
+  sc += '  "circle": ["circle", "round", "ring", "disk", "circular", "sphere", "orb", "disc", "wheel", "cycle"],\n';
+  sc += '  "straight": ["straight", "direct", "linear", "level", "even", "flat", "upright", "vertical", "horizontal", "aligned"],\n';
+  sc += '  "parallel": ["parallel", "equidistant", "corresponding", "matching", "side by side", "never meet", "in parallel"],\n';
+  sc += '  "perpendicular": ["perpendicular", "orthogonal", "right angle", "vertical", "upright", "at 90 degrees", "cross", "intersect"],\n';
+  sc += '  "similar": ["similar", "alike", "same", "comparable", "analogous", "corresponding", "like", "resembling", "matching", "parallel to"],\n';
+  sc += '  "congruent": ["congruent", "identical", "same shape", "equal size", "matching", "exact", "equivalent", "corresponding"],\n';
+  sc += '  "symmetry": ["symmetry", "balance", "regularity", "proportion", "equality", "harmony", "uniformity", "evenness", "reflection"],\n';
+  sc += '  "axis": ["axis", "line", "center", "core", "pivot", "spindle", "shaft", "middle", "central", "median"],\n';
+  sc += '  "coordinate": ["coordinate", "position", "location", "point", "place", "spot", "grid", "map", "reference", "vertex"],\n';
+  sc += '  "positive": ["positive", "plus", "greater than zero", "above zero", "addition", "increase", "rise", "gain", "profit", "surplus"],\n';
+  sc += '  "negative": ["negative", "minus", "less than zero", "below zero", "subtraction", "decrease", "loss", "deficit", "shortfall"],\n';
+  sc += '  "number": ["number", "digit", "figure", "numeral", "integer", "count", "amount", "quantity", "total", "value"],\n';
+  sc += '  "power": ["power", "exponent", "index", "superscript", "raised to", "to the power", "square", "cube", "root", "degree"],\n';
+  sc += '  "root": ["root", "square root", "cube root", "radical", "solve", "solution", "answer", "result", "zero", "x-intercept"],\n';
+  sc += '  "solve": ["solve", "find", "calculate", "determine", "work out", "compute", "evaluate", "figure out", "resolve", "answer"],\n';
+  sc += '  "equation": ["equation", "formula", "expression", "algebra", "function", "identity", "relation", "problem", "sum", "calculation"],\n';
+  sc += '  "variable": ["variable", "unknown", "x", "y", "z", "a", "b", "c", "n", "factor", "quantity"],\n';
+  sc += '  "constant": ["constant", "fixed", "unchanging", "steady", "invariable", "permanent", "consistent", "uniform", "stable", "static"],\n';
+  sc += '  "function": ["function", "operation", "process", "transformation", "mapping", "rule", "relation", "correlation", "equation", "formula"],\n';
+  sc += '  "graph": ["graph", "plot", "chart", "diagram", "curve", "line", "bar", "histogram", "display", "figure"],\n';
+  sc += '  "slope": ["slope", "gradient", "steepness", "incline", "pitch", "angle", "rise over run", "grade", "tilt", "slant"],\n';
+  sc += '  "intercept": ["intercept", "crossing", "intersection", "cut", "meet", "touch", "cross", "x-intercept", "y-intercept"],\n';
+  sc += '  "linear": ["linear", "straight-line", "direct", "proportional", "simple", "first-degree", "straight", "even", "level"],\n';
+  sc += '  "quadratic": ["quadratic", "parabolic", "second-degree", "squared", "x²", "quad", "curve", "hyperbola"],\n';
+  sc += '  "probability": ["probability", "chance", "likelihood", "possibility", "risk", "odds", "propensity", "expectation", "frequency"],\n';
+  sc += '  "mean": ["mean", "average", "median", "norm", "middle", "center", "typical", "normal", "usual", "standard"],\n';
+  sc += '  "median": ["median", "middle", "midpoint", "center", "average", "central", "halfway", "middle value", "mid"],\n';
+  sc += '  "mode": ["mode", "most common", "frequent", "popular", "common", "typical", "prevalent", "dominant", "majority"],\n';
+  sc += '  "range": ["range", "span", "spread", "extent", "scope", "distance", "interval", "gap", "difference", "variation"],\n';
+  sc += '  "variance": ["variance", "deviation", "spread", "dispersion", "scatter", "fluctuation", "varying", "difference", "variability"],\n';
+  sc += '  "standard": ["standard", "normal", "common", "usual", "typical", "average", "baseline", "benchmark", "criterion", "norm"],\n';
+  sc += '  "statistics": ["statistics", "data", "figures", "numbers", "analysis", "information", "stats", "measurements", "quantities"],\n';
+  sc += '  "population": ["population", "group", "set", "collection", "sample", "community", "society", "people", "individuals", "entirety"],\n';
+  sc += '  "sample": ["sample", "example", "subset", "segment", "portion", "specimen", "selection", "instance", "representative"],\n';
+  sc += '  // General academic terms\n';
+  sc += '  "cause": ["cause", "reason", "source", "origin", "basis", "root", "trigger", "factor", "agent", "causation"],\n';
+  sc += '  "effect": ["effect", "result", "outcome", "consequence", "impact", "implication", "aftermath", "product", "reaction"],\n';
+  sc += '  "compare": ["compare", "contrast", "liken", "relate", "parallel", "match", "correlate", "juxtapose", "differentiate", "distinguish"],\n';
+  sc += '  "contrast": ["contrast", "differ", "distinguish", "differentiate", "oppose", "counter", "vary", "divergence", "disparity", "difference"],\n';
+  sc += '  "analyze": ["analyze", "examine", "study", "investigate", "explore", "dissect", "scrutinize", "evaluate", "assess", "review"],\n';
+  sc += '  "explain": ["explain", "describe", "clarify", "elaborate", "interpret", "define", "illustrate", "demonstrate", "elucidate", "expound"],\n';
+  sc += '  "describe": ["describe", "depict", "portray", "characterize", "detail", "narrate", "recall", "report", "outline", "summarize"],\n';
+  sc += '  "evaluate": ["evaluate", "assess", "judge", "appraise", "measure", "weigh", "rate", "score", "value", "estimate"],\n';
+  sc += '  "discuss": ["discuss", "examine", "debate", "review", "explore", "consider", "deliberate", "analyse", "scrutinize", "talk about"],\n';
+  sc += '  "define": ["define", "describe", "explain", "identify", "characterize", "specify", "outline", "establish", "determine", "state"],\n';
+  sc += '  "illustrate": ["illustrate", "demonstrate", "show", "exemplify", "depict", "represent", "display", "present", "visualize"],\n';
+  sc += '  "justify": ["justify", "defend", "support", "explain", "vindicate", "validate", "ratify", "uphold", "maintain", "substantiate"],\n';
+  sc += '  "prove": ["prove", "demonstrate", "verify", "confirm", "establish", "validate", "authenticate", "certify", "bear out", "corroborate"],\n';
+  sc += '  "suggest": ["suggest", "imply", "indicate", "propose", "recommend", "offer", "present", "advance", "submit", "put forward"],\n';
+  sc += '  "argue": ["argue", "assert", "claim", "maintain", "contend", "reason", "hold", "allege", "defend", "dispute"],\n';
+  sc += '  "evidence": ["evidence", "proof", "indication", "sign", "testimony", "witness", "verification", "confirmation", "data", "support"],\n';
+  sc += '  "theory": ["theory", "hypothesis", "model", "framework", "concept", "premise", "principle", "proposition", "supposition", "idea"],\n';
+  sc += '  "hypothesis": ["hypothesis", "theory", "assumption", "premise", "proposition", "supposition", "guess", "estimate", "postulate", "speculation"],\n';
+  sc += '  "experiment": ["experiment", "test", "trial", "investigation", "study", "procedure", "examination", "research", "analysis"],\n';
+  sc += '  "observation": ["observation", "viewing", "watching", "examination", "inspection", "scrutiny", "overview", "surveillance", "attention"],\n';
+  sc += '  "conclusion": ["conclusion", "inference", "deduction", "finding", "result", "outcome", "determination", "resolution", "decision"],\n';
+  sc += '  "summary": ["summary", "synopsis", "overview", "recap", "precis", "digest", "outline", "abbreviation", "condensation", "rundown"],\n';
+  sc += '  "analysis": ["analysis", "examination", "study", "investigation", "breakdown", "dissection", "scrutiny", "evaluation", "appraisal"],\n';
+  sc += '  "synthesis": ["synthesis", "combination", "composite", "integration", "union", "amalgamation", "blend", "fusion", "merger"],\n';
+  sc += '  // Science terms\n';
+  sc += '  "cell": ["cell", "unit", "compartment", "chamber", "element", "component", "structure", "building block", "organelle"],\n';
+  sc += '  "nucleus": ["nucleus", "core", "center", "heart", "hub", "kernel", "focus", "seat", "middle", "epicenter"],\n';
+  sc += '  "protein": ["protein", "amino acid", "peptide", "macromolecule", "enzyme", "chain", "polypeptide", "building block", "organic compound"],\n';
+  sc += '  "enzyme": ["enzyme", "catalyst", "protein", "activator", "digestive", "accelerator", "agent", "biocatalyst", "ferment"],\n';
+  sc += '  "gene": ["gene", "DNA", "chromosome", "hereditary", "inherited", "genetic", "sequence", "blueprint", "allele", "trait"],\n';
+  sc += '  "DNA": ["DNA", "deoxyribonucleic", "genetic", "hereditary", "chromosome", "gene", "blueprint", "code", "nucleotide", "double helix"],\n';
+  sc += '  "RNA": ["RNA", "ribonucleic", "genetic", "messenger", "transcription", "coding", "transfer", "ribosomal", "mRNA", "tRNA"],\n';
+  sc += '  "photosynthesis": ["photosynthesis", "photosynthetic", "chloroplast", "sunlight", "glucose", "oxygen", "carbon dioxide", "water", "chlorophyll"],\n';
+  sc += '  "respiration": ["respiration", "breathing", "ventilation", "cellular", "aerobic", "oxygen", "energy", "carbon dioxide", "gas exchange"],\n';
+  sc += '  "mitosis": ["mitosis", "cell division", "replication", "duplication", "division", "nuclear division", "karyokinesis", "separation"],\n';
+  sc += '  "meiosis": ["meiosis", "cell division", "reduction", "gamete", "sperm", "egg", "reproductive", "chromosome", "division"],\n';
+  sc += '  "digestion": ["digestion", "breakdown", "absorption", "assimilation", "decomposition", "hydrolysis", "enzymatic", "catabolism"],\n';
+  sc += '  "circulation": ["circulation", "blood flow", "transport", "pumping", "cardiovascular", "circulatory", "flow", "perfusion"],\n';
+  sc += '  "excretion": ["excretion", "elimination", "removal", "waste", "secretion", "expulsion", "ejection", "withdrawal", "excreting"],\n';
+  sc += '  "hormone": ["hormone", "chemical messenger", "signal", "regulator", "endocrine", "growth", "steroid", "peptide", "releasing factor"],\n';
+  sc += '  "neuron": ["neuron", "nerve cell", "nerve", "impulse", "synapse", "neuromuscular", "neurotransmitter", "axon", "dendrite"],\n';
+  sc += '  "synapse": ["synapse", "junction", "gap", "connection", "transmission", "bridge", "contact", "link", "communication"],\n';
+  sc += '  "infection": ["infection", "invasion", "contamination", "disease", "illness", "pathogen", "virus", "bacteria", "fungus", "parasite"],\n';
+  sc += '  "antibody": ["antibody", "immunoglobulin", "defense", "immune", "antigen", "protection", "resistance", "serum", "plasma cell"],\n';
+  sc += '  "antigen": ["antigen", "foreign", "pathogen", "invader", "stimulus", "immune response", "allergen", "toxin", "protein"],\n';
+  sc += '  "vaccine": ["vaccine", "immunization", "inoculation", "immunization", "preventative", "serum", "booster", "injection", "protection"],\n';
+  sc += '  "bacteria": ["bacteria", "microbe", "germ", "pathogen", "prokaryote", "bacillus", "coccus", "spirillum", "microorganism", "bug"],\n';
+  sc += '  "virus": ["virus", "pathogen", "infection", "disease", "microbe", "germ", "viroid", "prion", "infection agent", "contagion"],\n';
+  sc += '  "fungus": ["fungus", "mold", "yeast", "mushroom", "spore", "mycelium", "mildew", "rust", "smut", "truffle"],\n';
+  sc += '  "parasite": ["parasite", "organism", "host", "pathogen", "infection", "invader", "germ", "microbe", "protozoa", "worm"],\n';
+  sc += '  // Physics terms\n';
+  sc += '  "force": ["force", "strength", "power", "energy", "pressure", "impact", "thrust", "push", "pull", "stress"],\n';
+  sc += '  "mass": ["mass", "weight", "bulk", "heaviness", "quantity", "substance", "matter", "material", "load", "capacity"],\n';
+  sc += '  "velocity": ["velocity", "speed", "rate", "pace", "rapidity", "motion", "movement", "velocity", "quickness", "swiftness"],\n';
+  sc += '  "acceleration": ["acceleration", "speed", "rate", "increase", "velocity change", "gain", "gaining speed", "pickup", "rapidity"],\n';
+  sc += '  "momentum": ["momentum", "force", "motion", "velocity", "speed", "mass", "inertia", "thrust", "impetus", "drive"],\n';
+  sc += '  "energy": ["energy", "power", "strength", "force", "vigor", "vitality", "fuel", "dynamism", "juice", "steam"],\n';
+  sc += '  "kinetic": ["kinetic", "motion", "movement", "active", "dynamic", "energetic", "moving", "velocity", "kinetic energy"],\n';
+  sc += '  "potential": ["potential", "stored", "latent", "possible", "capable", "future", "prospective", "energy", "power"],\n';
+  sc += '  "gravity": ["gravity", "gravitation", "pull", "attraction", "force", "weight", "earth", "planet", "attraction", "field"],\n';
+  sc += '  "friction": ["friction", "resistance", "drag", "traction", "adhesion", "grip", "clutch", "contact", "roughness", "abrasion"],\n';
+  sc += '  "work": ["work", "energy", "effort", "exertion", "labor", "toil", "operation", "function", "performance", "action"],\n';
+  sc += '  "power": ["power", "energy", "force", "strength", "might", "capability", "capacity", "ability", "potential", "forcefulness"],\n';
+  sc += '  "pressure": ["pressure", "force", "stress", "strain", "tension", "weight", "load", "compression", "burden", "oppression"],\n';
+  sc += '  "temperature": ["temperature", "heat", "degree", "warmth", "hotness", "coldness", "thermal", "centigrade", "fahrenheit", "kelvin"],\n';
+  sc += '  "heat": ["heat", "warmth", "hotness", "temperature", "thermal", "energy", "calor", "fire", "warm", "hot"],\n';
+  sc += '  "electric": ["electric", "current", "charge", "energy", "power", "circuit", "voltage", "resistance", "conduction", "lightning"],\n';
+  sc += '  "magnetic": ["magnetic", "magnet", "field", "attraction", "repulsion", "iron", "ferromagnetic", "compass", "pole", "north"],\n';
+  sc += '  "wave": ["wave", "undulation", "ripple", "vibration", "oscillation", "pulse", "surge", "swell", "flux", "signal"],\n';
+  sc += '  "sound": ["sound", "noise", "vibration", "acoustic", "tone", "pitch", "frequency", "volume", "audible", "audio"],\n';
+  sc += '  "light": ["light", "illumination", "beam", "ray", "photon", "brightness", "glow", "radiance", "shine", "spark"],\n';
+  sc += '  "reflection": ["reflection", "mirror", "image", "echo", "mirroring", "reverberation", "reaction", "response", "return"],\n';
+  sc += '  "refraction": ["refraction", "bending", "deflection", "deviation", "change", "direction", "curvature", "angle", "transmission"],\n';
+  sc += '  "lens": ["lens", "glass", "transparent", "convex", "concave", "magnifying", "camera", "spectacle", "focal", "prism"],\n';
+  sc += '  "mirror": ["mirror", "reflecting", "glass", "looking glass", "surface", "reflect", "image", "back", "silvered", "plane"],\n';
+  sc += '  "circuit": ["circuit", "loop", "path", "route", "connection", "cycle", "ring", "circle", "network", "grid"],\n';
+  sc += '  "voltage": ["voltage", "potential difference", "electromotive", "force", "power", "electricity", "charge", "volts", "pressure"],\n';
+  sc += '  "current": ["current", "flow", "stream", "charge", "electricity", "amperage", "power", "conductance", "flux", "movement"],\n';
+  sc += '  "resistance": ["resistance", "opposition", "impedance", "friction", "obstacle", "blockage", "drag", "strain", "restriction"],\n';
+  sc += '  // Chemistry terms\n';
+  sc += '  "atom": ["atom", "particle", "element", "matter", "particle", "nucleus", "electron", "proton", "neutron", "molecule"],\n';
+  sc += '  "molecule": ["molecule", "compound", "particle", "element", "substance", "composite", "unit", "entity", "structure", "molecular"],\n';
+  sc += '  "compound": ["compound", "substance", "mixture", "alloy", "combination", "composite", "material", "solution", "hydride", "oxide"],\n';
+  sc += '  "element": ["element", "substance", "metal", "nonmetal", "gas", "pure", "simple", "constituent", "component", "basic"],\n';
+  sc += '  "acid": ["acid", "corrosive", "sour", "acetic", "sulfuric", "hydrochloric", "nitric", "organic", "inorganic", "acidic"],\n';
+  sc += '  "base": ["base", "alkali", "caustic", "sodium hydroxide", "potassium", "lime", "hydroxide", "ammonia", "basic", "alkaline"],\n';
+  sc += '  "salt": ["salt", "ionic", "compound", "sodium", "chloride", "mineral", "crystalline", "halite", "sea salt", "rock salt"],\n';
+  sc += '  "oxidation": ["oxidation", "rust", "corrosion", "oxygen", "loss", "electrons", "burn", "combust", "oxidize", "burning"],\n';
+  sc += '  "reduction": ["reduction", "gain", "electrons", "decrease", "minimize", "lower", "shorten", "cut", "cutting", "reducing"],\n';
+  sc += '  "catalyst": ["catalyst", "accelerator", "promoter", "activator", "facilitator", "agent", "mediator", "enzyme", "catalyze"],\n';
+  sc += '  "solution": ["solution", "dissolution", "mixture", "liquid", "solvent", "solute", "aqueous", "suspension", "concentration", "dilution"],\n';
+  sc += '  "concentration": ["concentration", "strength", "density", "volume", "potency", "intensity", "proportion", "content", "amount"],\n';
+  sc += '  "equilibrium": ["equilibrium", "balance", "stability", "equal", "rest", "stationary", "balanced", "static", "poise", "even"],\n';
+  sc += '  "pH": ["pH", "acidity", "alkalinity", "hydrogen", "potential", "neutral", "scale", "indicator", "litmus", "acid base"],\n';
+  sc += '  "reaction": ["reaction", "process", "change", "transformation", "interaction", "response", "action", "chemical", "alteration", "modification"],\n';
+  sc += '  // Geography / Environment\n';
+  sc += '  "climate": ["climate", "weather", "atmosphere", "temperature", "rainfall", "season", "environment", "meteorology", "climate zone"],\n';
+  sc += '  "ecosystem": ["ecosystem", "environment", "habitat", "system", "community", "biome", "ecology", "food web", "conservation", "balance"],\n';
+  sc += '  "pollution": ["pollution", "contamination", "waste", "emission", "toxin", "hazard", "degradation", "litter", "effluent", "smog"],\n';
+  sc += '  "conservation": ["conservation", "preservation", "protection", "sustainability", "management", "stewardship", "safeguard", "upkeep"],\n';
+  sc += '  "sustainable": ["sustainable", "renewable", "green", "eco", "environmental", "conservation", "responsible", "future", "stable"],\n';
+  sc += '  "population": ["population", "people", "community", "society", "demographics", "citizens", "residents", "inhabitants", "local", "area"],\n';
+  sc += '  "urbanization": ["urbanization", "city", "town", "development", "growth", "migration", "urban", "metropolis", "city planning"],\n';
+  sc += '  "development": ["development", "progress", "growth", "advancement", "improvement", "expansion", "evolution", "maturation", "modernization"],\n';
+  sc += '  // History / Civic\n';
+  sc += '  "democracy": ["democracy", "self-government", "republic", "free state", "popular government", "election", "vote", "rule of law", "representative"],\n';
+  sc += '  "constitution": ["constitution", "charter", "law", "bill", "act", "authority", "framework", "system", "code", "statute"],\n';
+  sc += '  "government": ["government", "state", "administration", "authority", "rule", "control", "governance", "regime", "executive", "power"],\n';
+  sc += '  "citizen": ["citizen", "resident", "inhabitant", "national", "voter", "subject", "electorate", "member", "public", "civilian"],\n';
+  sc += '  "rights": ["rights", "freedom", "privileges", "entitlement", "liberties", "freedoms", "civil", "human", "constitutional", "legal"],\n';
+  sc += '  "freedom": ["freedom", "liberty", "independence", "autonomy", "self-determination", "free will", "sovereignty", "self-rule"],\n';
+  sc += '  "justice": ["justice", "fairness", "equality", "righteousness", "lawfulness", "equity", "impartiality", "rectitude", "judgment"],\n';
+  sc += '  "equality": ["equality", "equity", "fairness", "justice", "impartiality", "same rights", "equal", "parity", "uniformity"],\n';
+  sc += '  // General verbs\n';
+  sc += '  "show": ["show", "display", "demonstrate", "exhibit", "present", "reveal", "unveil", "indicate", "point out", "highlight"],\n';
+  sc += '  "identify": ["identify", "recognize", "name", "label", "classify", "determine", "pinpoint", "discover", "discern", "distinguish"],\n';
+  sc += '  "classify": ["classify", "categorize", "group", "arrange", "order", "sort", "organize", "rank", "grade", "systematize"],\n';
+  sc += '  "compare": ["compare", "contrast", "relate", "parallel", "juxtapose", "differentiate", "distinguish", "correlate", "analogize"],\n';
+  sc += '  "distinguish": ["distinguish", "differentiate", "discern", "recognize", "perceive", "tell apart", "separate", "discriminate", "characterize"],\n';
+  sc += '  "represent": ["represent", "depict", "portray", "stand for", "symbolize", "illustrate", "manifest", "embody", "characterize"],\n';
+  sc += '  "demonstrate": ["demonstrate", "prove", "show", "indicate", "reveal", "establish", "determine", "verify", "substantiate", "manifest"],\n';
+  sc += '  // Additional key terms for ECZ/Cambridge\n';
+  sc += '  "answer": ["answer", "response", "reply", "solution", "result", "resolution", "explanation", "justification", "reason"],\n';
+  sc += '  "correct": ["correct", "right", "accurate", "precise", "proper", "valid", "true", "exact", "faithful", "error-free"],\n';
+  sc += '  "wrong": ["wrong", "incorrect", "inaccurate", "false", "invalid", "erroneous", "mistaken", "faulty", "fallacious", "in error"],\n';
+  sc += '  "calculate": ["calculate", "compute", "determine", "estimate", "measure", "quantify", "reckon", "figure", "compute", "evaluate"],\n';
+  sc += '  "express": ["express", "articulate", "convey", "communicate", "state", "word", "phrase", "put", "declare", "utter"],\n';
+  sc += '  "interpret": ["interpret", "translate", "decode", "explain", "analyze", "understand", "construe", "read", "clarify", "elucidate"],\n';
+  sc += '  "relate": ["relate", "connect", "associate", "link", "refer", "pertain", "touch", "affect", "influence", "correspond"],\n';
+  sc += '  "evaluate": ["evaluate", "assess", "appraise", "judge", "weigh", "estimate", "value", "rate", "score", "measure"],\n';
+  sc += '  "consider": ["consider", "think", "regard", "deem", "view", "see", "analyze", "review", "contemplate", "ponder"],\n';
+  sc += '  "provide": ["provide", "give", "supply", "present", "offer", "deliver", "furnish", "contribute", "allocate", "bestow"],\n';
+  sc += '  "require": ["require", "need", "demand", "necessitate", "call for", "ask", "order", "insist", "urge", "request"],\n';
+  sc += '  "form": ["form", "shape", "create", "make", "construct", "build", "develop", "establish", "organize", "structure"],\n';
+  sc += '  "type": ["type", "kind", "sort", "variety", "category", "class", "classification", "group", "style", "form"],\n';
+  sc += '  // Stopping words (common but not marking-critical)\n';
+  sc += '  "the": ["the", "this", "that", "these", "those", "a", "an"]\n';
+  sc += '};\n\n';
+
+  // ── Helper: Normalize text for matching ─────────────────────
+  sc += 'function normalizeText(str) {\n';
+  sc += '  if (!str) return "";\n';
+  sc += '  // Separate list-markers (1. A. 2) b) etc.) from following words\n';
+  sc += '  // so "1.Anther" and "1. Anther" both normalise to "1 anther"\n';
+  sc += '  var s = String(str).toLowerCase();\n';
+  sc += '  s = s.replace(/\\b([a-z0-9])[.):]/g, "$1 ");\n';
+  sc += '  return s.replace(/[^a-z0-9 ]/g, "").replace(/\\s+/g, " ").trim();\n';
+  sc += '}\n\n';
+
+  // ── Helper: Get synonym set for a word ──────────────────────
+  sc += 'function getSynonyms(word) {\n';
+  sc += '  var w = normalizeText(word);\n';
+  sc += '  if (w.length < 2) return [];\n';
+  sc += '  if (SYNONYMS.hasOwnProperty(w)) {\n';
+  sc += '    var result = [];\n';
+  sc += '    for (var j = 0; j < SYNONYMS[w].length; j++) result.push(normalizeText(SYNONYMS[w][j]));\n';
+  sc += '    return result;\n';
   sc += '  }\n';
-  sc += '  var modelAns = q.answer || q.guidance || "(No model answer set)";\n';
-  sc += '  var prompt = "You are an experienced ECZ Zambia exam marker at Mountain Tuition Centre.\\n\\n" +\n';
-  sc += '    "QUESTION: " + q.text + "\\n" +\n';
-  sc += '    "MODEL ANSWER / MARK SCHEME: " + modelAns + "\\n" +\n';
-  sc += '    "STUDENT ANSWER: " + studentAns + "\\n" +\n';
-  sc += '    "MAXIMUM MARKS: " + (q.marks || 1) + "\\n\\n" +\n';
-  sc += '    "Return ONLY valid JSON, no other text:\\n" +\n';
-  sc += '    "{\\"score\\": 2, \\"feedback\\": \\"Your feedback here.\\"}\\n\\n" +\n';
-  sc += '    "MARKING RULES:\\n" +\n';
-  sc += '    "- Award marks for correct facts even if worded differently\\n" +\n';
-  sc += '    "- Award partial marks fairly (e.g. 2/3 if 2 of 3 points correct)\\n" +\n';
-  sc += '    "- Blank or irrelevant answer = score 0\\n" +\n';
-  sc += '    "- Feedback: 1-2 sentences, constructive and encouraging\\n" +\n';
-  sc += '    "- score must be a whole number between 0 and " + (q.marks || 1);\n';
-  sc += '  fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + AI_KEY, {\n';
-  sc += '    method: "POST",\n';
-  sc += '    headers: { "Content-Type": "application/json" },\n';
-  sc += '    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 300 } })\n';
-  sc += '  }).then(function(r){ return r.json(); })\n';
-  sc += '    .then(function(d) {\n';
-  sc += '      if (d.candidates && d.candidates[0]) {\n';
-  sc += '        var text = d.candidates[0].content.parts[0].text.replace(/```json/gi,"").replace(/```/g,"").trim();\n';
-  sc += '        var si = text.indexOf("{"), ei = text.lastIndexOf("}");\n';
-  sc += '        if (si >= 0 && ei > si) {\n';
-  sc += '          try {\n';
-  sc += '            var res = JSON.parse(text.substring(si, ei+1));\n';
-  sc += '            var sc2 = Math.min(Math.max(0, parseInt(res.score) || 0), q.marks || 1);\n';
-  sc += '            onDone({ score: sc2, feedback: res.feedback || "Marked by AI." }); return;\n';
-  sc += '          } catch(ex) {}\n';
-  sc += '        }\n';
+  sc += '  return [];\n';
+  sc += '}\n\n';
+
+  // ── Helper: Check if a word is a stopword ──────────────────
+  sc += 'function isStopWord(word) {\n';
+  sc += '  var stops = ["the","this","that","these","those","a","an","and","or","but","for","nor","on","at","to","by","in","of","with","without","over","under","through","during","between","among","upon","towards","via","per","versus","vs",\n';
+  sc += '    "is","are","was","were","be","been","being","has","have","had","do","does","did","done","can","could","will","would","shall","should","may","might","must",\n';
+  sc += '    "it","its","they","their","them","there","here","which","who","what","when","where","why","how","also","such","than","then","so","as","into","onto","from",\n';
+  sc += '    "not","no","yes","if","because","since","while","each","every","all","some","any","both","most","much","many","more","very","etc",\n';
+  sc += '    "process","result","results","shown","known","called","used","using","term","refers","occurs","occur","forms","form","makes","make","made",\n';
+  sc += '    "gives","give","produces","produce","produced","involves","involve","involved","include","includes","including","found","seen","said"];\n';
+  sc += '  var w = normalizeText(word);\n';
+  sc += '  for (var i = 0; i < stops.length; i++) {\n';
+  sc += '    if (w === stops[i]) return true;\n';
+  sc += '  }\n';
+  sc += '  return false;\n';
+  sc += '}\n\n';
+
+  // ── Core matching function (two-pass: exact first, then synonyms/stems) ─────
+  sc += 'function matchWithSynonyms(studentText, modelText) {\n';
+  sc += '  if (!studentText || !modelText) return { score: 0, matches: [], totalConcepts: 0, matched: 0 };\n';
+  sc += '  var sNorm = normalizeText(studentText);\n';
+  sc += '  var mNorm = normalizeText(modelText);\n';
+  sc += '  if (!sNorm || !mNorm) return { score: 0, matches: [], totalConcepts: 0, matched: 0 };\n';
+  sc += '  var studentWords = sNorm.split(" ");\n';
+  sc += '  var modelWordsRaw = mNorm.split(" ");\n';
+  sc += '  // Build filtered concept list from model answer\n';
+  sc += '  var modelWords = [];\n';
+  sc += '  for (var k = 0; k < modelWordsRaw.length; k++) {\n';
+  sc += '    var wk = modelWordsRaw[k];\n';
+  sc += '    if (wk.length >= 2 && !isStopWord(wk)) modelWords.push(wk);\n';
+  sc += '  }\n';
+  sc += '  var usedIdx = [];\n';
+  sc += '  var matches = [];\n';
+  sc += '  var pending = [];\n';
+  sc += '  // PASS 1 — exact word-for-word matches (highest confidence)\n';
+  sc += '  for (var mi = 0; mi < modelWords.length; mi++) {\n';
+  sc += '    var mw = modelWords[mi];\n';
+  sc += '    var found = false;\n';
+  sc += '    for (var si = 0; si < studentWords.length; si++) {\n';
+  sc += '      if (usedIdx.indexOf(si) !== -1) continue;\n';
+  sc += '      if (studentWords[si] === mw) {\n';
+  sc += '        found = true; usedIdx.push(si);\n';
+  sc += '        matches.push({ concept: mw, match: studentWords[si] }); break;\n';
   sc += '      }\n';
-  sc += '      onDone({ score: 0, feedback: "AI marking unavailable — teacher will review." });\n';
-  sc += '    }).catch(function() { onDone({ score: 0, feedback: "AI offline — teacher will review." }); });\n';
+  sc += '    }\n';
+  sc += '    if (!found) pending.push(mw);\n';
+  sc += '  }\n';
+  sc += '  // PASS 2 — synonym + stem matches for unmatched concepts\n';
+  sc += '  var matched = modelWords.length - pending.length;\n';
+  sc += '  for (var pi = 0; pi < pending.length; pi++) {\n';
+  sc += '    var mw2 = pending[pi];\n';
+  sc += '    var syns = getSynonyms(mw2);\n';
+  sc += '    var acceptable = [mw2].concat(syns || []);\n';
+  sc += '    var found2 = false;\n';
+  sc += '    for (var si2 = 0; si2 < studentWords.length; si2++) {\n';
+  sc += '      if (usedIdx.indexOf(si2) !== -1) continue;\n';
+  sc += '      var sw2 = studentWords[si2];\n';
+  sc += '      if (acceptable.indexOf(sw2) !== -1) {\n';
+  sc += '        found2 = true; usedIdx.push(si2);\n';
+  sc += '        matches.push({ concept: mw2, match: sw2 }); break;\n';
+  sc += '      }\n';
+  sc += '    }\n';
+  sc += '    if (!found2) {\n';
+  sc += '      // Stem matching — require minimum 5-char stem to avoid false positives\n';
+  sc += '      for (var si3 = 0; si3 < studentWords.length; si3++) {\n';
+  sc += '        if (usedIdx.indexOf(si3) !== -1) continue;\n';
+  sc += '        var sw3 = studentWords[si3];\n';
+  sc += '        for (var ai = 0; ai < acceptable.length; ai++) {\n';
+  sc += '          var acc = acceptable[ai];\n';
+  sc += '          if (acc.length >= 5 && sw3.length >= 5) {\n';
+  sc += '            var stem = acc.slice(0, Math.max(5, acc.length - 2));\n';
+  sc += '            if (sw3.indexOf(stem) === 0 || stem.indexOf(sw3) === 0) {\n';
+  sc += '              found2 = true; usedIdx.push(si3);\n';
+  sc += '              matches.push({ concept: mw2, match: sw3 + " (partial)" }); break;\n';
+  sc += '            }\n';
+  sc += '          }\n';
+  sc += '        }\n';
+  sc += '        if (found2) break;\n';
+  sc += '      }\n';
+  sc += '    }\n';
+  sc += '    if (found2) matched++;\n';
+  sc += '  }\n';
+  sc += '  var totalConcepts = modelWords.length;\n';
+  sc += '  var scorePct = totalConcepts > 0 ? Math.round((matched / totalConcepts) * 100) : 0;\n';
+  sc += '  return { score: scorePct, matches: matches, totalConcepts: totalConcepts, matched: matched };\n';
+  sc += '}\n\n';
+
+  // ── ECZ-Standard marking with generous partial credit ───────
+  sc += 'function markAnswer(studentAnswer, modelAnswer, maxMarks) {\n';
+  sc += '  if (!studentAnswer || !studentAnswer.trim()) {\n';
+  sc += '    return { score: 0, feedback: "No answer provided — 0 marks awarded.", details: null };\n';
+  sc += '  }\n';
+  sc += '  var result = matchWithSynonyms(studentAnswer, modelAnswer || "");\n';
+  sc += '  // ECZ generous marking curve:\n';
+  sc += '  // 75%+ concepts matched → full marks (phrasing should never cost full credit)\n';
+  sc += '  // 50-74% matched       → 75% of marks\n';
+  sc += '  // 1-49% matched        → proportional, minimum 40%\n';
+  sc += '  // 0 concepts matched   → 0\n';
+  sc += '  var rawPct = result.totalConcepts > 0 ? (result.matched / result.totalConcepts) : 0;\n';
+  sc += '  var scorePct;\n';
+  sc += '  if (rawPct >= 0.75)      scorePct = 1.0;\n';
+  sc += '  else if (rawPct >= 0.5)  scorePct = Math.max(rawPct, 0.75);\n';
+  sc += '  else if (rawPct > 0)     scorePct = Math.max(rawPct, 0.4);\n';
+  sc += '  else                     scorePct = 0;\n';
+  sc += '  var finalScore = Math.round(scorePct * maxMarks * 2) / 2;\n';
+  sc += '  if (finalScore < 0.5 && result.matched > 0) finalScore = 0.5;\n';
+  sc += '  finalScore = Math.min(finalScore, maxMarks);\n';
+  sc += '  var pct = Math.round(rawPct * 100);\n';
+  sc += '  var feedback = "";\n';
+  sc += '  if (pct >= 75)      feedback = "Excellent! You covered the key points.";\n';
+  sc += '  else if (pct >= 50) feedback = "Good answer. You covered many of the key points.";\n';
+  sc += '  else if (pct >= 25) feedback = "Partial answer. Some key points are missing.";\n';
+  sc += '  else if (result.matched > 0) feedback = "Limited answer. Several key points were missed.";\n';
+  sc += '  else                feedback = "Needs improvement. Review the key concepts and try again.";\n';
+  sc += '  if (result.matched > 0 && result.totalConcepts > 0) {\n';
+  sc += '    feedback += " You matched " + result.matched + "/" + result.totalConcepts + " key concept" + (result.totalConcepts !== 1 ? "s" : "") + ".";\n';
+  sc += '  } else if (studentAnswer.length > 10 && result.totalConcepts === 0) {\n';
+  sc += '    feedback = "Your answer was relevant. No exact key terms matched — teacher may review.";\n';
+  sc += '  }\n';
+  sc += '  return { score: finalScore, feedback: feedback, details: result };\n';
+  sc += '}\n\n';
+
+  // ── AI Marking fallback (uses built-in engine, no API needed) ──────────────
+  sc += 'function aiMarkQuestion(q, studentAns, onDone) {\n';
+  sc += '  var modelAns = q.answer || q.guidance || "";\n';
+  sc += '  var maxMarks = q.marks || 1;\n';
+  sc += '  var result = markAnswer(studentAns, modelAns, maxMarks);\n';
+  sc += '  onDone({ score: result.score, feedback: result.feedback });\n';
   sc += '}\n\n';
 
   // ── showAIMarkingScreen ───────────────────────────────────────────────────
@@ -3092,8 +3397,8 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '    rEl.innerHTML = "<div style=\\"min-height:60vh;display:flex;align-items:center;justify-content:center;padding:20px;\\">" +\n';
   sc += '      "<div style=\\"text-align:center;max-width:400px;\\">" +\n';
   sc += '      "<div style=\\"font-size:3rem;margin-bottom:14px;\\">\\uD83E\\uDD16</div>" +\n';
-  sc += '      "<div style=\\"font-size:1.1rem;font-weight:800;color:var(--gold);margin-bottom:8px;\\">AI is Marking Your Answers...</div>" +\n';
-  sc += '      "<div style=\\"font-size:0.85rem;color:#aab4d4;margin-bottom:16px;\\">Gemini AI is reading your short answers and essays.<br>This takes a few seconds.</div>" +\n';
+  sc += '      "<div style=\\"font-size:1.1rem;font-weight:800;color:var(--gold);margin-bottom:8px;\\">Marking Your Answers...</div>" +\n';
+  sc += '      "<div style=\\"font-size:0.85rem;color:#aab4d4;margin-bottom:16px;\\">ECZ-style marking engine is checking your answers.<br>This works offline — no internet needed.</div>" +\n';
   sc += '      "<div id=\\"ai-mark-bar\\" style=\\"height:10px;background:rgba(201,162,39,0.2);border-radius:5px;overflow:hidden;margin-bottom:8px;\\">" +\n';
   sc += '      "<div id=\\"ai-mark-fill\\" style=\\"height:100%;background:var(--gold);border-radius:5px;width:0%;transition:width 0.5s;\\"></div></div>" +\n';
   sc += '      "<div id=\\"ai-mark-lbl\\" style=\\"font-size:0.82rem;color:#8899cc;\\">0 of " + total + " questions marked</div>" +\n';
@@ -3128,7 +3433,7 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  if (rEl) { rEl.style.display = "block"; rEl.innerHTML = buildResult(slip, gClass, gEmoji); }\n';
   sc += '}\n\n';
 
-  // ── submitExam (new AI-aware version) ─────────────────────────────────────
+  // ── submitExam (uses auto-marking engine) ─────────────────────────────────────
   sc += 'function submitExam() {\n';
   sc += '  if (timerInt) clearInterval(timerInt);\n';
   sc += '  for (var qi = 0; qi < EXAM_QS.length; qi++) {\n';
@@ -3149,7 +3454,7 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  }\n';
   sc += '  retakes++;\n';
   sc += '  aiMarks = {}; aiFeedback = {};\n';
-  sc += '  if (!longQs.length || !AI_KEY) {\n';
+  sc += '  if (!longQs.length) {\n';
   sc += '    showFinalResult(mcqScore, mcqMax, mcqRight, mcqTotal, 0, 0); return;\n';
   sc += '  }\n';
   sc += '  showAIMarkingScreen(longQs.length);\n';
@@ -3188,7 +3493,7 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  h += "<div class=\\"srow\\"><span>MCQ Score</span><span class=\\"sval\\">" + slip.mcqScore + " / " + (slip.mcqMax||0) + " marks</span></div>";\n';
   sc += '  h += "<div class=\\"srow\\"><span>Percentage</span><span class=\\"sval\\" style=\\"color:var(--gold);font-weight:800;\\">" + slip.pct + "%</span></div>";\n';
   sc += '  h += "<div class=\\"srow\\"><span>Grade</span><span class=\\"sval " + gClass + "\\">" + slip.grade + "</span></div>";\n';
-  sc += '  h += slip.aiMax > 0 ? "<div class=\\"srow\\"><span>&#129302; AI Marked</span><span class=\\"sval\\" style=\\"color:#81c784;font-weight:800;\\">" + (slip.aiScore||0) + " / " + slip.aiMax + " marks</span></div>" : "";\n';
+  sc += '  h += slip.aiMax > 0 ? "<div class=\\"srow\\"><span>\\uD83E\\uDD16 Auto-Marked</span><span class=\\"sval\\" style=\\"color:#81c784;font-weight:800;\\">" + (slip.aiScore||0) + " / " + slip.aiMax + " marks</span></div>" : "";\n';
   sc += '  h += "<div class=\\"srow\\" style=\\"border-top:2px solid rgba(201,162,39,0.4);\\"><span style=\\"font-weight:700;\\">Total Score</span><span class=\\"sval\\" style=\\"color:var(--gold);font-size:1rem;font-weight:900;\\">" + slip.score + " / " + (slip.max||0) + " marks</span></div>";\n';
   sc += '  h += "<div class=\\"srow\\"><span>Correct Answers</span><span class=\\"sval\\">" + slip.right + " / " + slip.total + " MCQs</span></div>";\n';
   sc += '  h += "<div class=\\"srow\\"><span>Date &amp; Time</span><span class=\\"sval\\">" + escH(slip.time) + "</span></div>";\n';
@@ -3207,7 +3512,7 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  return h;\n';
   sc += '}\n\n';
 
-  // buildReview
+  // buildReview (shows auto-mark details)
   sc += 'function buildReview() {\n';
   sc += '  var h = "";\n';
   sc += '  for (var i = 0; i < EXAM_QS.length; i++) {\n';
@@ -3240,7 +3545,7 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '        var aiClr = qAISc >= q.marks ? "#2ecc71" : qAISc > 0 ? "#f39c12" : "#e74c3c";\n';
   sc += '        h += "<div style=\\"border:2px solid " + aiClr + ";border-radius:9px;padding:10px 13px;margin-bottom:7px;background:rgba(14,24,70,0.85);\\">"\n';
   sc += '          + "<div style=\\"display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;\\">"\n';
-  sc += '          + "<span style=\\"font-size:0.8rem;font-weight:700;color:#e8c04a;\\">&#129302; AI Marking Result</span>"\n';
+  sc += '          + "<span style=\\"font-size:0.8rem;font-weight:700;color:#e8c04a;\\">\\uD83E\\uDD16 Auto-Mark Result</span>"\n';
   sc += '          + "<span style=\\"font-size:0.95rem;font-weight:900;color:" + aiClr + ";\\">" + qAISc + " / " + q.marks + " marks</span></div>"\n';
   sc += '          + "<div style=\\"font-size:0.84rem;color:#d4e0ff;line-height:1.6;\\">" + escH(qAIFb || "") + "</div></div>";\n';
   sc += '      }\n';
@@ -6460,13 +6765,12 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
       answers: studentAnswers
     };
 
-    // Save to Firestore
-    // AI mark short/essay before saving
+    // ── AUTO-MARK short/essay questions (ECZ standard — same engine as standalone exams) ──
     var longQsOnline = [];
     for (var lqoi=0; lqoi<qs.length; lqoi++) {
       if (qs[lqoi].type !== 'mcq') longQsOnline.push(qs[lqoi]);
     }
-    var oKey = localStorage.getItem('mtc_gemini_key') || '';
+
     function finishAndSave(aScr, aMx, aMks, aFbs) {
       result.aiScore = aScr; result.aiMax = aMx;
       result.aiMarks = aMks; result.aiFeedback = aFbs;
@@ -6482,37 +6786,200 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
         .then(function(){ showOnlineResult(result, gc, ge, score, max, right, total); })
         .catch(function(){ showOnlineResult(result, gc, ge, score, max, right, total); });
     }
-    if (!longQsOnline.length || !oKey) { finishAndSave(0,0,{},{}); return; }
-    document.body.innerHTML = '<div style="min-height:100vh;background:#081236;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;padding:20px;"><div style="text-align:center;max-width:380px;"><div style="font-size:3rem;margin-bottom:12px;">&#129302;</div><div style="font-size:1.1rem;font-weight:800;color:#c9a227;margin-bottom:8px;">AI is Marking Your Answers...</div><div style="font-size:0.85rem;color:#aab4d4;margin-bottom:16px;">Gemini AI is reviewing your short answers and essays.<br>Please wait a moment.</div><div style="height:12px;background:rgba(201,162,39,0.15);border-radius:6px;overflow:hidden;"><div id="oaip" style="height:100%;background:#c9a227;border-radius:6px;width:0%;transition:width 0.5s;"></div></div><div id="oail" style="font-size:0.82rem;color:#8899cc;margin-top:8px;">0 of ' + longQsOnline.length + ' marked</div></div></div>';
-    var oD=0,oS=0,oM=0,oMk={},oFb={};
-    for (var oqi2=0; oqi2<longQsOnline.length; oqi2++) {
-      (function(oq) {
-        oM += (oq.marks||1);
-        var oA = studentAnswers[oq.id] || '';
-        function onMark(sc5,fb5) {
-          oMk[oq.id]=sc5; oFb[oq.id]=fb5; oS+=sc5; oD++;
-          var fp=document.getElementById('oaip'),fl=document.getElementById('oail');
-          if(fp) fp.style.width=Math.round((oD/longQsOnline.length)*100)+'%';
-          if(fl) fl.textContent=oD+' of '+longQsOnline.length+' marked';
-          if(oD===longQsOnline.length) finishAndSave(oS,oM,oMk,oFb);
-        }
-        if (!oA.trim()) { onMark(0,'No answer provided.'); return; }
-        var oP = 'ECZ Zambia exam marker at Mountain Tuition Centre.\n\nQUESTION: '+oq.text+'\nMODEL ANSWER: '+(oq.answer||oq.guidance||'N/A')+'\nSTUDENT ANSWER: '+oA+'\nMAX MARKS: '+(oq.marks||1)+'\n\nReturn ONLY JSON: {"score":2,"feedback":"Comment."}\nPartial marks OK. Blank=0. score 0 to '+(oq.marks||1);
-        fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+oKey,{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({contents:[{parts:[{text:oP}]}],generationConfig:{temperature:0.2,maxOutputTokens:256}})
-        }).then(function(r){return r.json();}).then(function(d){
-          var s6=0,f6='AI unavailable.';
-          if(d.candidates&&d.candidates[0]){
-            var tx=d.candidates[0].content.parts[0].text.replace(/```json/gi,'').replace(/```/g,'').trim();
-            var si=tx.indexOf('{'),ei=tx.lastIndexOf('}');
-            if(si>=0&&ei>si){try{var rr=JSON.parse(tx.substring(si,ei+1));
-              s6=Math.min(Math.max(0,parseInt(rr.score)||0),oq.marks||1);f6=rr.feedback||'Marked.';}catch(e){}}
-          }
-          onMark(s6,f6);
-        }).catch(function(){ onMark(0,'AI offline — teacher will review.'); });
-      })(longQsOnline[oqi2]);
+
+    if (!longQsOnline.length) { finishAndSave(0,0,{},{}); return; }
+
+    // ── ECZ Auto-Mark Engine (inline — no API key required) ──────────────────
+    var AM_SYNONYMS = {
+      "add":["add","plus","sum","total","combine","increase","addition","together","and","in addition"],
+      "subtract":["subtract","minus","difference","decrease","take away","deduct","less","remove","substract","deduction"],
+      "multiply":["multiply","times","product","multiplication","multiple","double","triple","multiplied by","x","multiply by"],
+      "divide":["divide","division","quotient","share","split","distribute","divided by","into","fraction","ratio"],
+      "equal":["equal","equals","equivalent","same","identical","is","are","equal to","exactly","matches"],
+      "greater":["greater","more","larger","bigger","higher","exceeds","above","over","superior","surpasses"],
+      "less":["less","smaller","lower","fewer","under","below","inferior","minor","reduced","diminished"],
+      "area":["area","surface","region","space","coverage","extent","zone","measurement","size","square units"],
+      "volume":["volume","capacity","space","cubic","three dimensional","3d","amount","content","bulk","measure"],
+      "angle":["angle","degree","degrees","rotation","turn","corner","inclination","bearing","direction"],
+      "parallel":["parallel","alongside","equidistant","same direction","never meeting","side by side"],
+      "perpendicular":["perpendicular","right angle","90 degrees","normal","orthogonal","at right angles"],
+      "cell":["cell","unit","compartment","building block","basic unit","smallest unit","membrane","organelle"],
+      "nucleus":["nucleus","control center","brain","central","nuclear","chromosomes","dna","genetic material"],
+      "membrane":["membrane","barrier","boundary","wall","layer","covering","envelope","surface","phospholipid"],
+      "mitochondria":["mitochondria","mitochondrion","powerhouse","energy producer","atp","respiration"],
+      "chloroplast":["chloroplast","photosynthesis","green","chlorophyll","light absorption","solar energy"],
+      "photosynthesis":["photosynthesis","food making","light reaction","carbon fixation","glucose production","solar energy conversion"],
+      "respiration":["respiration","breathing","gas exchange","oxygen","carbon dioxide","cellular respiration","atp production"],
+      "diffusion":["diffusion","movement","concentration gradient","passive","spread","random motion","osmosis"],
+      "osmosis":["osmosis","water movement","selectively permeable","semi permeable","water potential","tonicity"],
+      "evolution":["evolution","natural selection","adaptation","change over time","survival","fitness","darwin"],
+      "genetics":["genetics","heredity","inheritance","genes","alleles","dna","chromosomes","traits"],
+      "ecosystem":["ecosystem","environment","habitat","community","biome","ecological system","living organisms"],
+      "food chain":["food chain","food web","energy flow","trophic level","predator","prey","producer","consumer"],
+      "atom":["atom","element","particle","proton","neutron","electron","atomic","nucleus","subatomic"],
+      "molecule":["molecule","compound","bond","chemical","combination","formula","substance","covalent","ionic"],
+      "reaction":["reaction","chemical change","process","equation","product","reactant","transform","convert"],
+      "acid":["acid","acidic","hydrogen","ph","proton","low ph","corrosive","sour","hydronium"],
+      "base":["base","basic","alkaline","alkali","hydroxide","high ph","neutralize","bitter","proton acceptor"],
+      "force":["force","push","pull","newton","pressure","load","weight","applied","mechanical","friction"],
+      "energy":["energy","power","capacity","ability","work","kinetic","potential","thermal","electrical","joule"],
+      "velocity":["velocity","speed","rate","motion","movement","displacement","per second","metres","kilometres"],
+      "acceleration":["acceleration","speeding up","rate of change","increasing velocity","deceleration","ms2"],
+      "gravity":["gravity","gravitational","weight","attraction","pull","fall","downward","g","9.8","earth"],
+      "heat":["heat","thermal","temperature","warm","hot","energy transfer","conduction","convection","radiation"],
+      "current":["current","ampere","flow","charge","electron flow","electrical","amperes","amps"],
+      "voltage":["voltage","potential difference","volts","emf","electric pressure","electrical pressure"],
+      "resistance":["resistance","ohm","opposition","impedance","restrict","block","ohms","impede"],
+      "democracy":["democracy","democratic","vote","election","majority rule","government","citizen","freedom"],
+      "constitution":["constitution","law","rights","document","founding","supreme law","amendment","legal"],
+      "independence":["independence","freedom","sovereignty","self rule","liberation","autonomy","self determination"],
+      "colonialism":["colonialism","colonial","empire","occupation","conquest","imperialism","foreign rule"],
+      "trade":["trade","commerce","exchange","market","buy","sell","barter","economic activity","business"],
+      "government":["government","state","authority","administration","leadership","ruling","policy","official"],
+      "geography":["geography","physical","human","location","place","environment","spatial","landscape"],
+      "climate":["climate","weather","temperature","rainfall","humidity","seasonal","atmospheric","precipitation"],
+      "erosion":["erosion","wear","weathering","degradation","soil loss","washing away","breakdown","wearing down"],
+      "agriculture":["agriculture","farming","crops","cultivation","harvest","food production","irrigation","planting"],
+      "photosynthate":["photosynthate","glucose","sugar","food","carbohydrate","organic","product"],
+      "transpiration":["transpiration","water loss","evaporation","stomata","water vapour","evapotranspiration"],
+      "germination":["germination","sprouting","growth","seedling","embryo","seedling emergence","sprouted"],
+      "pollination":["pollination","pollen transfer","fertilization","insects","wind","cross pollination"],
+      "anther":["anther","pollen producer","stamen","male part","pollen sac","microsporangium"],
+      "sepal":["sepal","calyx","outer leaf","green part","protective leaf","floral leaf"],
+      "ovary":["ovary","fruit","seed vessel","pistil","female part","carpel","seed container"],
+      "ovule":["ovule","seed","egg","embryo","female gamete","seed precursor"],
+      "endosperm":["endosperm","food store","nutrient","starchy tissue","food reserve","nutritive tissue"],
+      "cotyledon":["cotyledon","seed leaf","food store","first leaf","embryonic leaf","seed food"],
+      "plumule":["plumule","shoot","first bud","embryo shoot","epicotyl","first stem"],
+      "radicle":["radicle","root","first root","embryo root","tap root","primary root"],
+      "stigma":["stigma","pollen receiver","female top","sticky top","pistil tip","style top"],
+      "style":["style","connects","stalk","tube","column","pistil stalk","pollen tube pathway"],
+      "filament":["filament","stalk","stamen stalk","thin stalk","anther support","thin part"],
+      "petal":["petal","corolla","coloured leaf","flower leaf","attracts","colourful part"],
+      "good":["good","excellent","correct","right","accurate","proper","well","fine","great","better"],
+      "bad":["bad","wrong","incorrect","poor","mistake","error","false","inaccurate","improper"],
+      "large":["large","big","great","huge","enormous","massive","giant","vast","substantial","considerable"],
+      "small":["small","little","tiny","minute","minor","slight","short","compact","petite","micro"],
+      "increase":["increase","rise","grow","expand","enlarge","amplify","boost","elevate","raise","escalate"],
+      "decrease":["decrease","reduce","fall","drop","decline","lower","shrink","diminish","cut","lessen"],
+      "function":["function","role","purpose","job","task","duty","action","work","use","operate"],
+      "structure":["structure","form","shape","arrangement","organization","composition","anatomy","build"],
+      "process":["process","method","procedure","system","mechanism","way","means","approach","technique"],
+      "cause":["cause","reason","factor","source","origin","root","produce","lead","result in","due to"],
+      "effect":["effect","result","outcome","consequence","impact","influence","response","product"],
+      "describe":["describe","explain","state","outline","define","identify","name","give","list"],
+      "compare":["compare","contrast","difference","similarity","alike","unlike","both","whereas","however"],
+      "analyse":["analyse","analyze","examine","investigate","study","assess","evaluate","consider"],
+      "form":["form","shape","create","make","construct","build","develop","establish","organize","structure"],
+      "type":["type","kind","sort","variety","category","class","classification","group","style","form"]
+    };
+
+    function amNormalize(str) {
+      if (!str) return '';
+      var s = String(str).toLowerCase();
+      s = s.replace(/\b([a-z0-9])[.):]\\s*/g, '$1 ');
+      return s.replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
     }
+    function amGetSynonyms(word) {
+      var w = amNormalize(word);
+      if (w.length < 2) return [];
+      if (AM_SYNONYMS.hasOwnProperty(w)) {
+        var r = [];
+        for (var j=0; j<AM_SYNONYMS[w].length; j++) r.push(amNormalize(AM_SYNONYMS[w][j]));
+        return r;
+      }
+      return [];
+    }
+    function amIsStop(word) {
+      var stops = 'the this that these those a an and or but for nor on at to by in of with without over under through during between among upon towards via per versus vs is are was were be been being has have had do does did done can could will would shall should may might must it its they their them there here which who what when where why how also such than then so as into onto from not no yes if because since while each every all some any both most much many more very etc process result results shown known called used using term refers occurs occur forms form makes make made gives give produces produce produced involves involve involved include includes including found seen said'.split(' ');
+      var w = amNormalize(word);
+      for (var i=0; i<stops.length; i++) if (w === stops[i]) return true;
+      return false;
+    }
+    function amMatch(studentText, modelText) {
+      if (!studentText || !modelText) return { score:0, matches:[], totalConcepts:0, matched:0 };
+      var sNorm = amNormalize(studentText);
+      var mNorm = amNormalize(modelText);
+      if (!sNorm || !mNorm) return { score:0, matches:[], totalConcepts:0, matched:0 };
+      var sWords = sNorm.split(' ');
+      var mRaw   = mNorm.split(' ');
+      var mWords = [];
+      for (var k=0; k<mRaw.length; k++) { if (mRaw[k].length >= 2 && !amIsStop(mRaw[k])) mWords.push(mRaw[k]); }
+      var usedIdx=[], matches=[], pending=[];
+      // Pass 1: exact matches
+      for (var mi=0; mi<mWords.length; mi++) {
+        var mw=mWords[mi], found=false;
+        for (var si=0; si<sWords.length; si++) {
+          if (usedIdx.indexOf(si)!==-1) continue;
+          if (sWords[si]===mw) { found=true; usedIdx.push(si); matches.push({concept:mw,match:sWords[si]}); break; }
+        }
+        if (!found) pending.push(mw);
+      }
+      // Pass 2: synonyms + stems
+      var matched = mWords.length - pending.length;
+      for (var pi=0; pi<pending.length; pi++) {
+        var mw2=pending[pi], syns=amGetSynonyms(mw2), acc=[mw2].concat(syns||[]), found2=false;
+        for (var si2=0; si2<sWords.length; si2++) {
+          if (usedIdx.indexOf(si2)!==-1) continue;
+          if (acc.indexOf(sWords[si2])!==-1) { found2=true; usedIdx.push(si2); matches.push({concept:mw2,match:sWords[si2]}); break; }
+        }
+        if (!found2) {
+          for (var si3=0; si3<sWords.length; si3++) {
+            if (usedIdx.indexOf(si3)!==-1) continue;
+            for (var ai=0; ai<acc.length; ai++) {
+              if (acc[ai].length>=5 && sWords[si3].length>=5) {
+                var stem=acc[ai].slice(0,Math.max(5,acc[ai].length-2));
+                if (sWords[si3].indexOf(stem)===0||stem.indexOf(sWords[si3])===0) {
+                  found2=true; usedIdx.push(si3); matches.push({concept:mw2,match:sWords[si3]+' (partial)'}); break;
+                }
+              }
+            }
+            if (found2) break;
+          }
+        }
+        if (found2) matched++;
+      }
+      var total=mWords.length;
+      return { score: total>0?Math.round((matched/total)*100):0, matches:matches, totalConcepts:total, matched:matched };
+    }
+    function amMarkAnswer(studentAnswer, modelAnswer, maxMarks) {
+      if (!studentAnswer || !studentAnswer.trim()) return { score:0, feedback:'No answer provided — 0 marks awarded.' };
+      var res = amMatch(studentAnswer, modelAnswer||'');
+      var rawPct = res.totalConcepts>0?(res.matched/res.totalConcepts):0;
+      var scorePct;
+      if (rawPct>=0.75)     scorePct=1.0;
+      else if (rawPct>=0.5) scorePct=Math.max(rawPct,0.75);
+      else if (rawPct>0)    scorePct=Math.max(rawPct,0.4);
+      else                  scorePct=0;
+      var finalScore = Math.round(scorePct*maxMarks*2)/2;
+      if (finalScore<0.5 && res.matched>0) finalScore=0.5;
+      finalScore = Math.min(finalScore, maxMarks);
+      var pct = Math.round(rawPct*100);
+      var fb = pct>=75?'Excellent! You covered the key points.':pct>=50?'Good answer. You covered many of the key points.':pct>=25?'Partial answer. Some key points are missing.':res.matched>0?'Limited answer. Several key points were missed.':'Needs improvement. Review the key concepts and try again.';
+      if (res.matched>0 && res.totalConcepts>0) fb += ' You matched '+res.matched+'/'+res.totalConcepts+' key concept'+(res.totalConcepts!==1?'s':'')+'.';
+      else if (studentAnswer.length>10 && res.totalConcepts===0) fb = 'Your answer was relevant. No exact key terms matched — teacher may review.';
+      return { score:finalScore, feedback:fb };
+    }
+
+    // Show marking progress screen
+    document.body.innerHTML = '<div style="min-height:100vh;background:#081236;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;padding:20px;"><div style="text-align:center;max-width:380px;"><div style="font-size:3rem;margin-bottom:12px;">\uD83E\uDD16</div><div style="font-size:1.1rem;font-weight:800;color:#c9a227;margin-bottom:8px;">Auto-Marking Your Answers...</div><div style="font-size:0.85rem;color:#aab4d4;margin-bottom:16px;">ECZ Auto-Mark is checking your answers.<br>Please wait a moment.</div><div style="height:12px;background:rgba(201,162,39,0.15);border-radius:6px;overflow:hidden;"><div id="oaip" style="height:100%;background:#c9a227;border-radius:6px;width:0%;transition:width 0.4s;"></div></div><div id="oail" style="font-size:0.82rem;color:#8899cc;margin-top:8px;">0 of ' + longQsOnline.length + ' marked</div></div></div>';
+
+    // Synchronous auto-marking (no API needed)
+    var oS=0, oM=0, oMk={}, oFb={};
+    for (var oqi2=0; oqi2<longQsOnline.length; oqi2++) {
+      var oq = longQsOnline[oqi2];
+      var oA = studentAnswers[oq.id] || '';
+      var modelAns = oq.answer || oq.guidance || '';
+      var markResult = amMarkAnswer(oA, modelAns, oq.marks || 1);
+      oMk[oq.id] = markResult.score;
+      oFb[oq.id] = markResult.feedback;
+      oS += markResult.score;
+      oM += (oq.marks || 1);
+      var fp=document.getElementById('oaip'), fl=document.getElementById('oail');
+      if (fp) fp.style.width = Math.round(((oqi2+1)/longQsOnline.length)*100)+'%';
+      if (fl) fl.textContent = (oqi2+1)+' of '+longQsOnline.length+' marked';
+    }
+    finishAndSave(oS, oM, oMk, oFb);
   }
 
   function showOnlineResult(r, gc, ge, score, max, right, total){
@@ -6531,7 +6998,7 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Student</span><span style="color:#e8c04a;font-weight:600;">'+h(r.studentName)+'</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Exam No</span><span>'+h(r.studentNum)+'</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">MCQ Score</span><span>'+score+'/'+max+' (MCQ)</span></div>' +
-      (r.aiMax > 0 ? '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>&#129302; AI Marked</span><span style=\'color:#81c784;font-weight:700;\'>'+r.aiScore+'/'+r.aiMax+' marks</span></div>' : '') +
+      (r.aiMax > 0 ? '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>\uD83E\uDD16 Auto-Marked</span><span style=\'color:#81c784;font-weight:700;\'>'+r.aiScore+'/'+r.aiMax+' marks</span></div>' : '') +
       '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>Total Score</span><span style=\'color:#c9a227;font-weight:900;\'>'+(r.totalScore||score)+'/'+(r.totalMax||max)+' marks</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Grade</span><span style="color:'+gc+';font-weight:800;">'+r.grade+'</span></div>' +
       '</div>' +
