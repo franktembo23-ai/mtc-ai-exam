@@ -4514,6 +4514,35 @@ function teSelectExam(subj, examIdx) {
     subject:   subj,
     title:     entry.title || 'Exam'
   };
+
+  // ── Image enrichment: bank may have stripped images to save storage space.
+  // If the currently-loaded exam in examState has the same title, merge back
+  // any non-null images from the live session so diagrams appear in Take Exam.
+  try {
+    if (examState && examState.questions && examState.questions.length &&
+        examState.settings && examState.settings.title === teState.exam.title) {
+      var liveMap = {};
+      for (var eim = 0; eim < examState.questions.length; eim++) {
+        var lq = examState.questions[eim];
+        if (lq.id !== undefined) liveMap[lq.id] = lq;
+      }
+      for (var tqm = 0; tqm < teState.exam.questions.length; tqm++) {
+        var tq = teState.exam.questions[tqm];
+        if (!tq.image && liveMap[tq.id] && liveMap[tq.id].image) {
+          tq.image = liveMap[tq.id].image;
+        }
+        // Also enrich MCQ option images
+        if (tq.options && liveMap[tq.id] && liveMap[tq.id].options) {
+          var liveOpts = liveMap[tq.id].options;
+          for (var oim = 0; oim < tq.options.length && oim < liveOpts.length; oim++) {
+            if (!tq.options[oim].image && liveOpts[oim].image) {
+              tq.options[oim].image = liveOpts[oim].image;
+            }
+          }
+        }
+      }
+    }
+  } catch(eImg) {}
   teState.retakes = 0;
 
   // Populate login screen
@@ -4717,7 +4746,7 @@ function teSubmitExam() {
   if (teState.timerInt) clearInterval(teState.timerInt);
   var qs = teState.exam.questions;
 
-  // Save textarea answers
+  // ── Save textarea answers ────────────────────────────────────
   for (var qi = 0; qi < qs.length; qi++) {
     var q = qs[qi];
     if (q.type === 'short' || q.type === 'essay') {
@@ -4726,19 +4755,199 @@ function teSubmitExam() {
     }
   }
 
-  // Score
+  // ── Score MCQs, collect short/essay questions ────────────────
   var mcqScore = 0, mcqMax = 0, mcqRight = 0, mcqTotal = 0;
+  var longQs = [];
   for (var i = 0; i < qs.length; i++) {
     var q = qs[i];
     if (q.type === 'mcq') {
       mcqTotal++;
       mcqMax += (q.marks || 1);
       if (teState.answers[q.id] === q.correct) { mcqScore += (q.marks || 1); mcqRight++; }
+    } else {
+      longQs.push(q);
     }
   }
-  var pct   = mcqMax > 0 ? Math.round((mcqScore / mcqMax) * 100) : 0;
-  var sett  = teState.exam.settings || {};
-  var grds  = sett.grades || { d:80, m:65, c:50, p:35 };
+
+  // ── ECZ Auto-Mark Engine ──────────────────────────────────────
+  var TE_SYNONYMS = {
+    'add':['add','plus','sum','total','combine','increase','addition','together','in addition'],
+    'subtract':['subtract','minus','difference','decrease','take away','deduct','less','remove'],
+    'multiply':['multiply','times','product','multiplication','multiple','double','triple','multiplied by'],
+    'divide':['divide','division','quotient','share','split','distribute','divided by','fraction','ratio'],
+    'equal':['equal','equals','equivalent','same','identical','equal to','exactly','matches'],
+    'greater':['greater','more','larger','bigger','higher','exceeds','above','over','surpasses'],
+    'less':['less','smaller','lower','fewer','under','below','inferior','minor','reduced'],
+    'area':['area','surface','region','space','coverage','extent','zone','measurement','size','square units'],
+    'volume':['volume','capacity','space','cubic','three dimensional','3d','amount','content','bulk'],
+    'force':['force','push','pull','newton','pressure','load','weight','applied','mechanical','friction'],
+    'energy':['energy','power','capacity','ability','work','kinetic','potential','thermal','electrical','joule'],
+    'velocity':['velocity','speed','rate','motion','movement','displacement','per second','metres'],
+    'acceleration':['acceleration','speeding up','rate of change','increasing velocity','deceleration'],
+    'gravity':['gravity','gravitational','weight','attraction','pull','fall','downward','9.8'],
+    'heat':['heat','thermal','temperature','warm','hot','energy transfer','conduction','convection','radiation'],
+    'current':['current','ampere','flow','charge','electron flow','electrical','amps'],
+    'voltage':['voltage','potential difference','volts','emf','electric pressure'],
+    'resistance':['resistance','ohm','opposition','impedance','restrict','block','impede'],
+    'cell':['cell','unit','compartment','building block','basic unit','smallest unit','membrane'],
+    'nucleus':['nucleus','control center','brain','central','chromosomes','dna','genetic material'],
+    'membrane':['membrane','barrier','boundary','wall','layer','covering','envelope','phospholipid'],
+    'mitochondria':['mitochondria','mitochondrion','powerhouse','energy producer','atp','respiration'],
+    'chloroplast':['chloroplast','photosynthesis','green','chlorophyll','light absorption'],
+    'photosynthesis':['photosynthesis','food making','light reaction','carbon fixation','glucose production'],
+    'respiration':['respiration','breathing','gas exchange','oxygen','carbon dioxide','atp production'],
+    'diffusion':['diffusion','movement','concentration gradient','passive','spread','random motion'],
+    'osmosis':['osmosis','water movement','selectively permeable','semi permeable','water potential'],
+    'evolution':['evolution','natural selection','adaptation','change over time','survival','fitness'],
+    'genetics':['genetics','heredity','inheritance','genes','alleles','dna','chromosomes','traits'],
+    'ecosystem':['ecosystem','environment','habitat','community','biome','ecological system'],
+    'transpiration':['transpiration','water loss','evaporation','stomata','water vapour'],
+    'germination':['germination','sprouting','growth','seedling','embryo','sprouted'],
+    'pollination':['pollination','pollen transfer','fertilization','insects','wind','cross pollination'],
+    'anther':['anther','pollen producer','stamen','male part','pollen sac'],
+    'sepal':['sepal','calyx','outer leaf','green part','protective leaf'],
+    'ovary':['ovary','fruit','seed vessel','pistil','female part','carpel'],
+    'ovule':['ovule','seed','egg','embryo','female gamete'],
+    'endosperm':['endosperm','food store','nutrient','starchy tissue','food reserve'],
+    'cotyledon':['cotyledon','seed leaf','food store','first leaf','embryonic leaf'],
+    'plumule':['plumule','shoot','first bud','embryo shoot','epicotyl','first stem'],
+    'radicle':['radicle','root','first root','embryo root','tap root','primary root'],
+    'stigma':['stigma','pollen receiver','female top','sticky top','pistil tip'],
+    'style':['style','connects','stalk','tube','column','pistil stalk'],
+    'filament':['filament','stalk','stamen stalk','thin stalk','anther support'],
+    'petal':['petal','corolla','coloured leaf','flower leaf','attracts','colourful part'],
+    'acid':['acid','acidic','hydrogen','ph','proton','low ph','corrosive','sour'],
+    'base':['base','basic','alkaline','alkali','hydroxide','high ph','neutralize','bitter'],
+    'atom':['atom','element','particle','proton','neutron','electron','atomic','subatomic'],
+    'molecule':['molecule','compound','bond','chemical','combination','formula','substance'],
+    'reaction':['reaction','chemical change','process','equation','product','reactant','transform'],
+    'democracy':['democracy','democratic','vote','election','majority rule','government','citizen','freedom'],
+    'constitution':['constitution','law','rights','document','founding','supreme law','amendment'],
+    'independence':['independence','freedom','sovereignty','self rule','liberation','autonomy'],
+    'colonialism':['colonialism','colonial','empire','occupation','conquest','imperialism','foreign rule'],
+    'trade':['trade','commerce','exchange','market','buy','sell','barter','economic activity'],
+    'government':['government','state','authority','administration','leadership','ruling','policy'],
+    'climate':['climate','weather','temperature','rainfall','humidity','seasonal','atmospheric'],
+    'erosion':['erosion','wear','weathering','degradation','soil loss','washing away','breakdown'],
+    'agriculture':['agriculture','farming','crops','cultivation','harvest','food production'],
+    'function':['function','role','purpose','job','task','duty','action','work','use','operate'],
+    'structure':['structure','form','shape','arrangement','organization','composition','anatomy'],
+    'cause':['cause','reason','factor','source','origin','root','produce','lead','result in','due to'],
+    'effect':['effect','result','outcome','consequence','impact','influence','response','product'],
+    'increase':['increase','rise','grow','expand','enlarge','amplify','boost','elevate','raise'],
+    'decrease':['decrease','reduce','fall','drop','decline','lower','shrink','diminish','cut','lessen'],
+    'large':['large','big','great','huge','enormous','massive','giant','vast','substantial'],
+    'small':['small','little','tiny','minute','minor','slight','short','compact','petite']
+  };
+  var TE_STOPS = 'the this that these those a an and or but for nor on at to by in of with without over under through during between among upon towards via per versus vs is are was were be been being has have had do does did done can could will would shall should may might must it its they their them there here which who what when where why how also such than then so as into onto from not no yes if because since while each every all some any both most much many more very etc process result results shown known called used using term refers occurs occur forms form makes make made gives give produces produce produced involves involve involved include includes including found seen said'.split(' ');
+
+  function teNorm(str) {
+    if (!str) return '';
+    var s = String(str).toLowerCase();
+    s = s.replace(/\b([a-z0-9])[.):\-]/g, '$1 ');
+    return s.replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  function teIsStop(w) {
+    var n = teNorm(w);
+    for (var i = 0; i < TE_STOPS.length; i++) if (n === TE_STOPS[i]) return true;
+    return false;
+  }
+  function teSyns(word) {
+    var w = teNorm(word);
+    if (w.length < 2) return [];
+    if (TE_SYNONYMS.hasOwnProperty(w)) {
+      var r = [];
+      for (var j = 0; j < TE_SYNONYMS[w].length; j++) r.push(teNorm(TE_SYNONYMS[w][j]));
+      return r;
+    }
+    return [];
+  }
+  function teMatchAnswer(studentText, modelText) {
+    if (!studentText || !modelText) return { matched:0, totalConcepts:0 };
+    var sN = teNorm(studentText), mN = teNorm(modelText);
+    if (!sN || !mN) return { matched:0, totalConcepts:0 };
+    var sW = sN.split(' '), mR = mN.split(' '), mW = [];
+    for (var k = 0; k < mR.length; k++) { if (mR[k].length >= 2 && !teIsStop(mR[k])) mW.push(mR[k]); }
+    var used = [], matched = 0, pending = [];
+    // Pass 1: exact
+    for (var mi = 0; mi < mW.length; mi++) {
+      var mw = mW[mi], found = false;
+      for (var si = 0; si < sW.length; si++) {
+        if (used.indexOf(si) !== -1) continue;
+        if (sW[si] === mw) { found = true; used.push(si); break; }
+      }
+      if (found) matched++; else pending.push(mw);
+    }
+    // Pass 2: synonyms + stems
+    for (var pi = 0; pi < pending.length; pi++) {
+      var mw2 = pending[pi], syns = teSyns(mw2), acc = [mw2].concat(syns || []), f2 = false;
+      for (var si2 = 0; si2 < sW.length; si2++) {
+        if (used.indexOf(si2) !== -1) continue;
+        if (acc.indexOf(sW[si2]) !== -1) { f2 = true; used.push(si2); break; }
+      }
+      if (!f2) {
+        for (var si3 = 0; si3 < sW.length; si3++) {
+          if (used.indexOf(si3) !== -1) continue;
+          for (var ai = 0; ai < acc.length; ai++) {
+            if (acc[ai].length >= 5 && sW[si3].length >= 5) {
+              var stem = acc[ai].slice(0, Math.max(5, acc[ai].length - 2));
+              if (sW[si3].indexOf(stem) === 0 || stem.indexOf(sW[si3]) === 0) { f2 = true; used.push(si3); break; }
+            }
+          }
+          if (f2) break;
+        }
+      }
+      if (f2) matched++;
+    }
+    return { matched: matched, totalConcepts: mW.length };
+  }
+  function teAutoMark(studentAnswer, modelAnswer, maxMarks) {
+    if (!studentAnswer || !studentAnswer.trim()) return { score:0, feedback:'No answer provided — 0 marks awarded.' };
+    var res = teMatchAnswer(studentAnswer, modelAnswer || '');
+    var rawPct = res.totalConcepts > 0 ? (res.matched / res.totalConcepts) : 0;
+    var scorePct;
+    if      (rawPct >= 0.75) scorePct = 1.0;
+    else if (rawPct >= 0.5)  scorePct = Math.max(rawPct, 0.75);
+    else if (rawPct > 0)     scorePct = Math.max(rawPct, 0.4);
+    else                     scorePct = 0;
+    var finalScore = Math.round(scorePct * maxMarks * 2) / 2;
+    if (finalScore < 0.5 && res.matched > 0) finalScore = 0.5;
+    finalScore = Math.min(finalScore, maxMarks);
+    var pct = Math.round(rawPct * 100);
+    var fb = pct >= 75 ? 'Excellent! You covered the key points.' :
+             pct >= 50 ? 'Good answer. You covered many of the key points.' :
+             pct >= 25 ? 'Partial answer. Some key points are missing.' :
+             res.matched > 0 ? 'Limited answer. Several key points were missed.' :
+             'Needs improvement. Review the key concepts and try again.';
+    if (res.matched > 0 && res.totalConcepts > 0) {
+      fb += ' You matched ' + res.matched + '/' + res.totalConcepts + ' key concept' + (res.totalConcepts !== 1 ? 's' : '') + '.';
+    } else if (studentAnswer.length > 10 && res.totalConcepts === 0) {
+      fb = 'Your answer was relevant. No exact key terms matched — teacher may review.';
+    }
+    return { score: finalScore, feedback: fb };
+  }
+
+  // ── Run auto-marking on all short/essay questions ─────────────
+  teState.autoMarks    = {};
+  teState.autoFeedback = {};
+  var autoScore = 0, autoMax = 0;
+  for (var li = 0; li < longQs.length; li++) {
+    var lq = longQs[li];
+    var modelAns = lq.answer || lq.guidance || '';
+    var studentAns = teState.answers[lq.id] || '';
+    var markResult = teAutoMark(studentAns, modelAns, lq.marks || 1);
+    teState.autoMarks[lq.id]    = markResult.score;
+    teState.autoFeedback[lq.id] = markResult.feedback;
+    autoScore += markResult.score;
+    autoMax   += (lq.marks || 1);
+  }
+
+  // ── Combine MCQ + auto-mark scores for final grade ───────────
+  var totalScore = mcqScore + autoScore;
+  var totalMax   = mcqMax   + autoMax;
+  var pct  = totalMax > 0 ? Math.round((totalScore / totalMax) * 100) : 0;
+  var sett = teState.exam.settings || {};
+  var grds = sett.grades || { d:80, m:65, c:50, p:35 };
   var grade, gColor, gEmoji;
   if      (pct >= (grds.d || 80)) { grade = 'DISTINCTION'; gColor = '#64b5f6'; gEmoji = '\u2B50'; }
   else if (pct >= (grds.m || 65)) { grade = 'MERIT';       gColor = '#81c784'; gEmoji = '\uD83C\uDFC6'; }
@@ -4746,7 +4955,7 @@ function teSubmitExam() {
   else if (pct >= (grds.p || 35)) { grade = 'PASS';        gColor = '#ffb74d'; gEmoji = '\u2705'; }
   else                            { grade = 'FAIL';         gColor = '#ef9a9a'; gEmoji = '\u274C'; }
 
-  var now  = new Date();
+  var now = new Date();
   var record = {
     id:         now.getTime(),
     examTitle:  teState.exam.title,
@@ -4756,8 +4965,12 @@ function teSubmitExam() {
     year:       sett.year   || '',
     student:    teState.student,
     studentNum: teState.studentNum,
-    score:      mcqScore,
-    maxScore:   mcqMax,
+    score:      totalScore,
+    maxScore:   totalMax,
+    mcqScore:   mcqScore,
+    mcqMax:     mcqMax,
+    autoScore:  autoScore,
+    autoMax:    autoMax,
     pct:        pct,
     grade:      grade,
     mcqRight:   mcqRight,
@@ -4766,21 +4979,18 @@ function teSubmitExam() {
     time:       now.toLocaleString()
   };
 
-  // Save record
   teSaveRecord(record);
-
-  // Render result
   teShowScreen('te-result-screen');
-  teRenderResult(record, gColor, gEmoji, mcqScore, mcqMax, mcqRight, mcqTotal);
+  teRenderResult(record, gColor, gEmoji);
   window.scrollTo(0, 0);
 }
 
 // ── Render result screen ─────────────────────────────────────
-function teRenderResult(rec, gColor, gEmoji, mcqScore, mcqMax, mcqRight, mcqTotal) {
+function teRenderResult(rec, gColor, gEmoji) {
   var card = document.getElementById('te-result-card');
   if (!card) return;
 
-  var logoEl = document.querySelector('#app-header img');
+  var logoEl  = document.querySelector('#app-header img');
   var logoSrc = logoEl ? logoEl.src : '';
 
   var h = '';
@@ -4793,19 +5003,23 @@ function teRenderResult(rec, gColor, gEmoji, mcqScore, mcqMax, mcqRight, mcqTota
   h += '<div style="font-size:2.8rem;font-weight:900;color:var(--gold);line-height:1.1;margin:8px 0;">' + rec.pct + '%</div>';
   h += '<div style="font-size:1.7rem;font-weight:900;color:' + gColor + ';margin-bottom:14px;">' + gEmoji + ' ' + rec.grade + '</div>';
 
-  // Slip table
+  // ── Result slip ──
   h += '<div style="background:rgba(0,0,0,0.3);border-radius:10px;padding:12px;text-align:left;margin:10px 0;">';
   var rows = [
-    ['Student',          escHtml(rec.student)],
-    ['Exam Number',      escHtml(rec.studentNum)],
-    ['MCQ Score',        mcqScore + ' / ' + mcqMax + ' marks'],
-    ['Percentage',       '<span style="color:var(--gold);font-weight:800;">' + rec.pct + '%</span>'],
-    ['Grade',            '<span style="color:' + gColor + ';font-weight:800;">' + rec.grade + '</span>'],
-    ['Correct Answers',  mcqRight + ' / ' + mcqTotal + ' MCQs'],
-    ['Subject',          escHtml(rec.subject)],
-    ['Date &amp; Time',  escHtml(rec.time)],
-    ['Attempt',          '#' + rec.attempt]
+    ['Student',         escHtml(rec.student)],
+    ['Exam Number',     escHtml(rec.studentNum)],
+    ['MCQ Score',       (rec.mcqScore || 0) + ' / ' + (rec.mcqMax || 0) + ' marks']
   ];
+  if (rec.autoMax > 0) {
+    rows.push(['\uD83E\uDD16 Auto-Marked', '<span style="color:#81c784;font-weight:800;">' + rec.autoScore + ' / ' + rec.autoMax + ' marks</span>']);
+    rows.push(['Total Score', '<span style="color:var(--gold);font-weight:900;font-size:1rem;">' + rec.score + ' / ' + rec.maxScore + ' marks</span>']);
+  }
+  rows.push(['Percentage',      '<span style="color:var(--gold);font-weight:800;">' + rec.pct + '%</span>']);
+  rows.push(['Grade',           '<span style="color:' + gColor + ';font-weight:800;">' + rec.grade + '</span>']);
+  rows.push(['Correct Answers', (rec.mcqRight || 0) + ' / ' + (rec.mcqTotal || 0) + ' MCQs']);
+  rows.push(['Subject',         escHtml(rec.subject)]);
+  rows.push(['Date &amp; Time', escHtml(rec.time)]);
+  rows.push(['Attempt',         '#' + rec.attempt]);
   for (var ri = 0; ri < rows.length; ri++) {
     h += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,0.15);font-size:0.85rem;">';
     h += '<span style="color:#aab4d4;">' + rows[ri][0] + '</span>';
@@ -4813,14 +5027,14 @@ function teRenderResult(rec, gColor, gEmoji, mcqScore, mcqMax, mcqRight, mcqTota
   }
   h += '</div>';
 
-  // Action buttons
+  // ── Buttons ──
   h += '<div style="margin:12px 0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;">';
   h += '<button class="btn btn-gold" onclick="teSendWhatsApp()">&#128241; Send to Mr Tembo</button>';
   h += '<button class="btn btn-navy" onclick="teRetake()">&#8635; Retake Exam</button>';
   h += '<button class="btn btn-navy" onclick="teBackToSelect()">&#8592; Back to Exams</button>';
   h += '</div>';
 
-  // Answer review (collapsible)
+  // ── Answer review ──
   h += '<div style="text-align:left;margin-top:10px;">';
   h += '<button class="btn btn-navy" style="width:100%;margin-bottom:8px;" onclick="teToggleReview()">&#128065; Show Answer Review</button>';
   h += '<div id="te-review-wrap" style="display:none;">' + teBuildReview() + '</div>';
@@ -4862,8 +5076,18 @@ function teBuildReview() {
     } else {
       h += '<div style="font-size:0.82rem;color:#8899cc;margin-bottom:3px;">Your answer:</div>';
       h += '<div style="background:rgba(0,0,0,0.25);padding:7px 10px;border-radius:6px;font-size:0.84rem;">' + escHtml(ans[q.id] || '(No answer given)') + '</div>';
+      var amSc = (teState.autoMarks && teState.autoMarks[q.id] !== undefined) ? teState.autoMarks[q.id] : null;
+      var amFb = (teState.autoFeedback && teState.autoFeedback[q.id]) ? teState.autoFeedback[q.id] : '';
+      if (amSc !== null) {
+        var amQMax   = q.marks || 1;
+        var amColor  = amSc >= amQMax ? '#2ecc71' : (amSc > 0 ? '#ffb74d' : '#e74c3c');
+        h += '<div style="margin-top:6px;padding:6px 10px;background:rgba(201,162,39,0.07);border-left:3px solid ' + amColor + ';border-radius:0 5px 5px 0;font-size:0.82rem;">';
+        h += '<strong>\uD83E\uDD16 Auto-Mark Result</strong> <span style="color:' + amColor + ';font-weight:700;">' + amSc + '/' + amQMax + ' marks</span>';
+        if (amFb) h += '<div style="margin-top:3px;color:#c8d2f0;">' + escHtml(amFb) + '</div>';
+        h += '</div>';
+      }
       var modelAns = q.answer || q.guidance || '';
-      if (modelAns) h += '<div style="margin-top:6px;padding:6px 10px;background:rgba(46,204,113,0.08);border-left:3px solid #2ecc71;border-radius:0 5px 5px 0;font-size:0.82rem;color:#a0f0c0;"><strong>Model Answer:</strong> ' + escHtml(modelAns) + '</div>';
+      if (modelAns) h += '<div style="margin-top:6px;padding:6px 10px;background:rgba(46,204,113,0.08);border-left:3px solid #2ecc71;border-radius:0 5px 5px 0;font-size:0.82rem;color:#a0f0c0;"><strong>Model Answer / Mark Scheme:</strong> ' + escHtml(modelAns) + '</div>';
     }
     h += '</div>';
   }
@@ -4892,15 +5116,17 @@ function teSendWhatsApp() {
   if (!rec) { showToast('No result to send!'); return; }
   var msg  = (sett.waPrefix || 'MTC Exam Result') + '\n\n';
   msg += 'MOUNTAIN TUITION CENTRE\nExcellence in Education\n\n';
-  msg += 'Exam: '     + rec.examTitle  + '\n';
-  msg += 'Subject: '  + rec.subject + ' ' + rec.grade_lvl + '\n';
-  msg += 'Student: '  + rec.student    + '\n';
-  msg += 'Exam No: '  + rec.studentNum + '\n';
-  msg += 'Score: '    + rec.score + '/' + rec.maxScore + ' marks (' + rec.pct + '%)\n';
-  msg += 'Grade: '    + rec.grade      + '\n';
-  msg += 'Correct: '  + rec.mcqRight + '/' + rec.mcqTotal + ' MCQs\n';
-  msg += 'Date: '     + rec.time       + '\n';
-  msg += 'Attempt: #' + rec.attempt    + '\n';
+  msg += 'Exam: '      + rec.examTitle  + '\n';
+  msg += 'Subject: '   + rec.subject + ' ' + rec.grade_lvl + '\n';
+  msg += 'Student: '   + rec.student    + '\n';
+  msg += 'Exam No: '   + rec.studentNum + '\n';
+  msg += 'MCQ Score: ' + (rec.mcqScore || 0) + '/' + (rec.mcqMax || 0) + ' marks\n';
+  if (rec.autoMax > 0) msg += 'Auto-Marked: ' + rec.autoScore + '/' + rec.autoMax + ' marks\n';
+  msg += 'Total Score: ' + rec.score + '/' + rec.maxScore + ' marks (' + rec.pct + '%)\n';
+  msg += 'Grade: '     + rec.grade      + '\n';
+  msg += 'MCQs: '      + (rec.mcqRight || 0) + '/' + (rec.mcqTotal || 0) + ' correct\n';
+  msg += 'Date: '      + rec.time       + '\n';
+  msg += 'Attempt: #'  + rec.attempt    + '\n';
   msg += '\nSent via MTC AI EXAMS';
   window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
 }
@@ -6772,8 +6998,8 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
     }
 
     function finishAndSave(aScr, aMx, aMks, aFbs) {
-      result.aiScore = aScr; result.aiMax = aMx;
-      result.aiMarks = aMks; result.aiFeedback = aFbs;
+      result.autoScore    = aScr; result.autoMax      = aMx;
+      result.autoMarks    = aMks; result.autoFeedback = aFbs;
       if (aMx > 0) {
         var tp = Math.round(((score+aScr)/(max+aMx))*100);
         result.pct = tp; result.totalScore = score+aScr; result.totalMax = max+aMx;
@@ -6877,7 +7103,7 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
     function amNormalize(str) {
       if (!str) return '';
       var s = String(str).toLowerCase();
-      s = s.replace(/\b([a-z0-9])[.):]\\s*/g, '$1 ');
+      s = s.replace(/\b([a-z0-9])[.):]/g, '$1 ');
       return s.replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
     }
     function amGetSynonyms(word) {
@@ -6998,7 +7224,7 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Student</span><span style="color:#e8c04a;font-weight:600;">'+h(r.studentName)+'</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Exam No</span><span>'+h(r.studentNum)+'</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">MCQ Score</span><span>'+score+'/'+max+' (MCQ)</span></div>' +
-      (r.aiMax > 0 ? '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>\uD83E\uDD16 Auto-Marked</span><span style=\'color:#81c784;font-weight:700;\'>'+r.aiScore+'/'+r.aiMax+' marks</span></div>' : '') +
+      (r.autoMax > 0 ? '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>\uD83E\uDD16 Auto-Marked</span><span style=\'color:#81c784;font-weight:700;\'>'+r.autoScore+'/'+r.autoMax+' marks</span></div>' : '') +
       '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>Total Score</span><span style=\'color:#c9a227;font-weight:900;\'>'+(r.totalScore||score)+'/'+(r.totalMax||max)+' marks</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Grade</span><span style="color:'+gc+';font-weight:800;">'+r.grade+'</span></div>' +
       '</div>' +
