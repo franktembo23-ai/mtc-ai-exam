@@ -950,6 +950,13 @@ select option { background: #ffffff; color: #1a2744; }
       <div class="card-title">&#127891; Take Exam — Select Grade &amp; Subject</div>
       <p style="color:#aab4d4;font-size:0.87rem;margin-bottom:14px;">Choose a Grade level below, then a Subject, to find exams. Results are recorded automatically and saved by Grade and Subject.</p>
 
+      <!-- Student Auto-Sync bar -->
+      <div id="te-sync-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.2);border-radius:9px;">
+        <button class="btn btn-gold btn-sm" id="te-sync-now-btn" onclick="teSyncExamsNow()" style="min-width:110px;">&#128260; Sync Now</button>
+        <button class="btn btn-navy btn-sm" id="te-autosync-btn" onclick="teToggleAutoSync()" style="min-width:140px;">&#128257; Auto-Sync: OFF</button>
+        <span id="te-sync-status" style="font-size:0.8rem;color:#8899cc;flex:1;">Not synced — tap Sync Now to load latest exams.</span>
+      </div>
+
       <!-- Grade Level Buttons -->
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
         <button class="btn te-grade-btn" id="te-grade-btn-Grade 7"  data-grade="Grade 7"  onclick="teSelectGrade('Grade 7')"  style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128214; Grade 7</button>
@@ -1658,7 +1665,7 @@ function switchTab(name) {
   if (name === 'bank') { renderBank(); eiRefreshSubjectList(); updateBankStorageLabel(); }
   if (name === 'preview') generatePreview();
   if (name === 'publish')  renderPublishedList();
-  if (name === 'takeexam') { renderTEExamList(); renderPerfRecords(); }
+  if (name === 'takeexam') { renderTEExamList(); renderPerfRecords(); teInitSyncState(); }
   if (name === 'cloud') { liveLoadPublishedExams(); liveRefresh(); }
 }
 
@@ -2073,117 +2080,183 @@ function resetSettings() {
 // ============================================================
 // EXAM BANK
 // ============================================================
-function getBankData() {
-  // ── Split-key bank: each subject stored separately ──────────────────────────
-  var SUBJ_PREFIX = 'mtc_bs_';
-  var INDEX_KEY   = 'mtc_bank_idx';
-  var LEGACY_KEY  = 'mtc_exam_bank';
-  var bank = {};
+// ============================================================
+// EXAM BANK STORAGE — IndexedDB (unlimited images, no 5 MB cap)
+// ============================================================
+// IndexedDB replaces the old localStorage split-key approach.
+// All public API is kept identical: getBankData(), saveBankDataLocalOnly(),
+// saveBankData() — every caller elsewhere works without changes.
+//
+// Migration: on first run the old localStorage split-keys are read once,
+// written into IndexedDB, then removed from localStorage to free space.
+// ============================================================
 
-  // Migrate legacy single-key format once
+var IDB_NAME    = 'mtc_exam_bank_db';
+var IDB_VERSION = 1;
+var IDB_STORE   = 'subjects';
+var _idbConn    = null;   // cached IDBDatabase connection
+
+function idbOpen(onReady) {
+  if (_idbConn) { onReady(_idbConn); return; }
+  var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+  req.onupgradeneeded = function(e) {
+    var db = e.target.result;
+    if (!db.objectStoreNames.contains(IDB_STORE)) {
+      db.createObjectStore(IDB_STORE, { keyPath: 'subject' });
+    }
+  };
+  req.onsuccess = function(e) { _idbConn = e.target.result; onReady(_idbConn); };
+  req.onerror   = function()  { onReady(null); };
+}
+
+// ── Synchronous localStorage fallback helpers (used during migration + sync push) ──
+var SUBJ_PREFIX_LS = 'mtc_bs_';
+var INDEX_KEY_LS   = 'mtc_bank_idx';
+var LEGACY_KEY_LS  = 'mtc_exam_bank';
+
+function lsGetBankSubjects() {
+  try { return JSON.parse(localStorage.getItem(INDEX_KEY_LS) || '[]'); } catch(e) { return []; }
+}
+function lsGetSubject(subj) {
+  try { return JSON.parse(localStorage.getItem(SUBJ_PREFIX_LS + subj) || '[]'); } catch(e) { return []; }
+}
+function lsRemoveSubject(subj) {
+  try { localStorage.removeItem(SUBJ_PREFIX_LS + subj); } catch(e) {}
+}
+
+// ── Read entire bank from IndexedDB — returns via callback ────────────────────
+function idbGetBankAsync(onDone) {
+  idbOpen(function(db) {
+    if (!db) { onDone({}); return; }
+    var bank = {};
+    var tx   = db.transaction(IDB_STORE, 'readonly');
+    var req  = tx.objectStore(IDB_STORE).getAll();
+    req.onsuccess = function() {
+      var rows = req.result || [];
+      for (var i = 0; i < rows.length; i++) bank[rows[i].subject] = rows[i].exams || [];
+      onDone(bank);
+    };
+    req.onerror = function() { onDone({}); };
+  });
+}
+
+// ── Write bank to IndexedDB asynchronously ────────────────────────────────────
+function idbSaveBankAsync(bank, onDone) {
+  idbOpen(function(db) {
+    if (!db) { if (onDone) onDone(false); return; }
+    var subjects = Object.keys(bank);
+    var tx       = db.transaction(IDB_STORE, 'readwrite');
+    var store    = tx.objectStore(IDB_STORE);
+
+    // Clear existing records first, then write fresh
+    var clearReq = store.clear();
+    clearReq.onsuccess = function() {
+      for (var i = 0; i < subjects.length; i++) {
+        store.put({ subject: subjects[i], exams: bank[subjects[i]] || [] });
+      }
+    };
+    tx.oncomplete = function() { if (onDone) onDone(true);  };
+    tx.onerror    = function() { if (onDone) onDone(false); };
+  });
+}
+
+// ── In-memory cache so getBankData() (synchronous callers) always has data ───
+var _bankCache    = null;   // {subject: [exams...]}
+var _bankCacheOk  = false;  // true once IDB has been read at least once
+
+// Warm the cache from IndexedDB — called once at startup and after every save
+function warmBankCache(onDone) {
+  idbGetBankAsync(function(bank) {
+    _bankCache   = bank;
+    _bankCacheOk = true;
+    if (onDone) onDone(bank);
+  });
+}
+
+// ── Migration: localStorage → IndexedDB (runs once, then cleans up) ──────────
+function migrateLStoIDB(onDone) {
+  // Migrate old single-key format first
   var legacy = null;
-  try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY) || 'null'); } catch(e) {}
+  try { legacy = JSON.parse(localStorage.getItem(LEGACY_KEY_LS) || 'null'); } catch(e) {}
   if (legacy && Object.keys(legacy).length > 0) {
     var legSubjects = Object.keys(legacy);
-    var idx = [];
+    var idx = lsGetBankSubjects();
     for (var li = 0; li < legSubjects.length; li++) {
       var ls = legSubjects[li];
-      idx.push(ls);
-      try { localStorage.setItem(SUBJ_PREFIX + ls, JSON.stringify(legacy[ls])); } catch(e) {}
+      if (idx.indexOf(ls) === -1) idx.push(ls);
+      try { localStorage.setItem(SUBJ_PREFIX_LS + ls, JSON.stringify(legacy[ls])); } catch(e) {}
     }
-    try {
-      localStorage.setItem(INDEX_KEY, JSON.stringify(idx));
-      localStorage.removeItem(LEGACY_KEY);
-    } catch(e) {}
+    try { localStorage.setItem(INDEX_KEY_LS, JSON.stringify(idx)); localStorage.removeItem(LEGACY_KEY_LS); } catch(e) {}
   }
 
-  // Load from split keys
+  var lsSubjects = lsGetBankSubjects();
+  if (lsSubjects.length === 0) { if (onDone) onDone(); return; }
+
+  // Build bank from LS and push to IDB
+  var lsBank = {};
+  for (var i = 0; i < lsSubjects.length; i++) lsBank[lsSubjects[i]] = lsGetSubject(lsSubjects[i]);
+
+  idbSaveBankAsync(lsBank, function(ok) {
+    if (ok) {
+      // Remove LS bank keys to free up localStorage space
+      for (var ri = 0; ri < lsSubjects.length; ri++) lsRemoveSubject(lsSubjects[ri]);
+      try { localStorage.removeItem(INDEX_KEY_LS); } catch(e) {}
+    }
+    if (onDone) onDone();
+  });
+}
+
+// ── PUBLIC API ────────────────────────────────────────────────────────────────
+// getBankData() — synchronous (returns from in-memory cache).
+// Always accurate after warmBankCache() has run (called at startup).
+function getBankData() {
+  if (_bankCacheOk && _bankCache) return JSON.parse(JSON.stringify(_bankCache));
+  // Fallback: read from localStorage if IDB not warmed yet (should be rare)
+  var SUBJ_PREFIX = 'mtc_bs_';
+  var INDEX_KEY   = 'mtc_bank_idx';
+  var bank = {};
   var subjects = [];
   try { subjects = JSON.parse(localStorage.getItem(INDEX_KEY) || '[]'); } catch(e) {}
   for (var i = 0; i < subjects.length; i++) {
-    var subj = subjects[i];
     try {
-      var raw = localStorage.getItem(SUBJ_PREFIX + subj);
-      if (raw) bank[subj] = JSON.parse(raw);
-      else bank[subj] = [];
-    } catch(e) { bank[subj] = []; }
+      var raw = localStorage.getItem(SUBJ_PREFIX + subjects[i]);
+      bank[subjects[i]] = raw ? JSON.parse(raw) : [];
+    } catch(e) { bank[subjects[i]] = []; }
   }
   return bank;
 }
 
-// Writes the bank to localStorage only — no cloud push. Used internally by
-// saveBankData() and by bankSyncNow() (after a pull, the data already matches
-// the cloud, so re-pushing it would be redundant).
-function saveBankDataLocalOnly(bank) {
-  var SUBJ_PREFIX = 'mtc_bs_';
-  var INDEX_KEY   = 'mtc_bank_idx';
-  var subjects = Object.keys(bank);
-
-  // Get previous index to clean up removed subjects
-  var oldIdx = [];
-  try { oldIdx = JSON.parse(localStorage.getItem(INDEX_KEY) || '[]'); } catch(e) {}
-  for (var oi = 0; oi < oldIdx.length; oi++) {
-    if (subjects.indexOf(oldIdx[oi]) === -1) {
-      try { localStorage.removeItem(SUBJ_PREFIX + oldIdx[oi]); } catch(e) {}
-    }
-  }
-
-  // Save index
-  try { localStorage.setItem(INDEX_KEY, JSON.stringify(subjects)); } catch(e) {}
-
-  // Save each subject separately
-  var errors = [];
-  for (var i = 0; i < subjects.length; i++) {
-    var subj = subjects[i];
-    var json = JSON.stringify(bank[subj]);
-    var saved = false;
-    try { localStorage.setItem(SUBJ_PREFIX + subj, json); saved = true; } catch(e) {}
-
-    if (!saved) {
-      // Try saving with images stripped (fallback)
-      var stripped = [];
-      for (var ei = 0; ei < bank[subj].length; ei++) {
-        var entry = JSON.parse(JSON.stringify(bank[subj][ei]));
-        for (var qi = 0; qi < (entry.questions || []).length; qi++) {
-          entry.questions[qi].image = null;
-          var opts = entry.questions[qi].options || [];
-          for (var opi = 0; opi < opts.length; opi++) { opts[opi].image = null; }
-        }
-        stripped.push(entry);
-      }
-      try {
-        localStorage.setItem(SUBJ_PREFIX + subj, JSON.stringify(stripped));
-        errors.push(subj);
-      } catch(e2) {
-        errors.push(subj + ' (failed completely)');
-      }
-    }
-  }
-  if (errors.length > 0) {
-    showToast('Saved without images (storage full): ' + errors.join(', '));
-  }
+// saveBankDataLocalOnly() — writes to IndexedDB and updates the in-memory cache.
+// Asynchronous write; callers that need post-save actions pass a callback via
+// the optional second argument (internal use only — public callers omit it).
+function saveBankDataLocalOnly(bank, _onSaved) {
+  _bankCache   = JSON.parse(JSON.stringify(bank));
+  _bankCacheOk = true;
+  idbSaveBankAsync(bank, function(ok) {
+    if (!ok) showToast('Warning: exam bank could not be saved to IndexedDB. Storage may be unavailable.');
+    if (_onSaved) _onSaved();
+  });
 }
 
 function saveBankData(bank) {
-  var SUBJ_PREFIX = 'mtc_bs_';
-  var INDEX_KEY   = 'mtc_bank_idx';
-
-  // Capture OLD state (every subject's exam array) BEFORE any writes —
-  // used afterward to detect deletions/changes for cloud sync.
-  var oldBankSnapshot = {};
-  try {
-    var oldIdxSnap = JSON.parse(localStorage.getItem(INDEX_KEY) || '[]');
-    for (var osi = 0; osi < oldIdxSnap.length; osi++) {
-      try { oldBankSnapshot[oldIdxSnap[osi]] = JSON.parse(localStorage.getItem(SUBJ_PREFIX + oldIdxSnap[osi]) || '[]'); }
-      catch(e) { oldBankSnapshot[oldIdxSnap[osi]] = []; }
-    }
-  } catch(e) {}
-
-  saveBankDataLocalOnly(bank);
-
-  // ── Multi-Device Sync: push this change to the cloud (silently skipped if offline) ──
-  bankSyncPushChanges(oldBankSnapshot, bank);
+  // Capture old snapshot for cloud sync diff
+  var oldBankSnapshot = getBankData();
+  saveBankDataLocalOnly(bank, function() {
+    bankSyncPushChanges(oldBankSnapshot, bank);
+  });
 }
+
+// ── Boot: migrate LS → IDB then warm cache ────────────────────────────────────
+migrateLStoIDB(function() {
+  warmBankCache(function(bank) {
+    // If we already have data, refresh the bank UI quietly
+    if (Object.keys(bank).length > 0) {
+      if (typeof renderBank === 'function')        try { renderBank(); }        catch(e) {}
+      if (typeof renderTEExamList === 'function')  try { renderTEExamList(); }  catch(e) {}
+      if (typeof renderPerfRecords === 'function') try { renderPerfRecords(); } catch(e) {}
+    }
+  });
+});
 
 // ============================================================
 // MULTI-DEVICE EXAM BANK SYNC — Phone ⇄ PC ⇄ Phone via Firebase
@@ -2515,7 +2588,11 @@ function clearAllBank() {
   var count = Object.keys(bank).length;
   if (count === 0) { showToast('Bank is already empty'); return; }
   openModal('Clear Entire Bank', '<p style="color:#d4e0ff;">Delete ALL subjects and exams from the bank? This cannot be undone.</p>', function() {
-    localStorage.removeItem('mtc_exam_bank'); closeModal(); renderBank();
+    _bankCache = {}; _bankCacheOk = true;
+    idbSaveBankAsync({}, function() {});
+    try { localStorage.removeItem('mtc_exam_bank'); } catch(e) {}
+    try { localStorage.removeItem('mtc_bank_idx'); } catch(e) {}
+    closeModal(); renderBank();
     showToast('Exam bank cleared');
   }, 'Clear All');
 }
@@ -4242,6 +4319,107 @@ function teBackToSelect() {
   teShowScreen('te-select-screen');
   renderTEExamList();
   renderPerfRecords();
+}
+
+// ── Take Exam — Student Auto-Sync (read-only pull from mtc_bank_sync) ────────
+// Students can sync the exam bank without having access to the admin panel or
+// the exam builder. They only ever read from the published sync node; they
+// cannot modify, delete, or see admin-only content.
+var teAutoSyncOn       = false;
+var teAutoSyncListener = null;
+var teAutoSyncInterval = null;
+
+function teSyncUpdateStatus(text, ok) {
+  var el = document.getElementById('te-sync-status');
+  if (el) { el.textContent = text; el.style.color = ok ? '#81c784' : '#8899cc'; }
+}
+
+function teSyncExamsNow() {
+  var btn = document.getElementById('te-sync-now-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#128260; Syncing...'; }
+  teSyncUpdateStatus('Syncing exams from cloud...', true);
+
+  if (!cloudDB) {
+    teSyncUpdateStatus('Not connected to cloud — ask your teacher to set up Cloud & Live.', false);
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128260; Sync Now'; }
+    return;
+  }
+
+  cloudDB.ref('mtc_bank_sync').once('value').then(function(snap) {
+    var cloudData = snap.val() || {};
+    var localBank = getBankData();
+    var added = 0;
+
+    var subjects = Object.keys(cloudData);
+    for (var i = 0; i < subjects.length; i++) {
+      var subj = subjects[i];
+      var cloudExams = cloudData[subj] || {};
+      var examKeys = Object.keys(cloudExams);
+      if (!localBank[subj]) localBank[subj] = [];
+
+      var localIds = {};
+      for (var li = 0; li < localBank[subj].length; li++) {
+        if (localBank[subj][li] && localBank[subj][li].id) localIds[String(localBank[subj][li].id)] = true;
+      }
+      for (var ek = 0; ek < examKeys.length; ek++) {
+        var ce = cloudExams[examKeys[ek]];
+        if (!ce || !ce.id) continue;
+        if (!localIds[String(ce.id)]) { localBank[subj].push(ce); added++; }
+      }
+    }
+
+    if (added > 0) {
+      saveBankDataLocalOnly(localBank);
+      renderTEExamList();
+    }
+
+    var now = new Date().toLocaleTimeString();
+    teSyncUpdateStatus(added > 0 ? '\u2713 Synced ' + now + ' — ' + added + ' new exam(s) loaded.' : '\u2713 Synced ' + now + ' — All exams up to date.', true);
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128260; Sync Now'; }
+  }).catch(function(err) {
+    teSyncUpdateStatus('Sync failed — check your connection.', false);
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128260; Sync Now'; }
+  });
+}
+
+function teToggleAutoSync() {
+  teAutoSyncOn = !teAutoSyncOn;
+  var btn = document.getElementById('te-autosync-btn');
+  if (teAutoSyncOn) {
+    if (!cloudDB) {
+      teSyncUpdateStatus('Not connected to cloud — ask your teacher to set up Cloud & Live.', false);
+      teAutoSyncOn = false;
+      return;
+    }
+    if (btn) { btn.innerHTML = '&#128257; Auto-Sync: ON'; btn.classList.remove('btn-navy'); btn.classList.add('btn-gold'); }
+    teSyncExamsNow(); // immediate pull
+    // Re-sync every 30 seconds while ON
+    teAutoSyncInterval = setInterval(function() { if (cloudDB) teSyncExamsNow(); }, 30000);
+    // Also listen for live changes on the sync node
+    teAutoSyncListener = function() { if (cloudDB) teSyncExamsNow(); };
+    try { cloudDB.ref('mtc_bank_sync').on('value', teAutoSyncListener); } catch(e) {}
+    teSyncUpdateStatus('Auto-Sync ON — exams will refresh automatically.', true);
+    try { localStorage.setItem('mtc_te_autosync', '1'); } catch(e) {}
+  } else {
+    if (btn) { btn.innerHTML = '&#128257; Auto-Sync: OFF'; btn.classList.remove('btn-gold'); btn.classList.add('btn-navy'); }
+    if (teAutoSyncInterval) { clearInterval(teAutoSyncInterval); teAutoSyncInterval = null; }
+    if (cloudDB && teAutoSyncListener) {
+      try { cloudDB.ref('mtc_bank_sync').off('value', teAutoSyncListener); } catch(e) {}
+    }
+    teAutoSyncListener = null;
+    teSyncUpdateStatus('Auto-Sync OFF.', false);
+    try { localStorage.setItem('mtc_te_autosync', '0'); } catch(e) {}
+  }
+}
+
+// Resume Auto-Sync state when switching to Take Exam tab
+function teInitSyncState() {
+  var wasOn = false;
+  try { wasOn = localStorage.getItem('mtc_te_autosync') === '1'; } catch(e) {}
+  if (wasOn && cloudDB && !teAutoSyncOn) {
+    teAutoSyncOn = false; // force re-init
+    teToggleAutoSync();
+  }
 }
 
 // ── Grade level selection ────────────────────────────────────
