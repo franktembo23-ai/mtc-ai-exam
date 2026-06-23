@@ -3275,72 +3275,85 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  return false;\n';
   sc += '}\n\n';
 
-  // ── Core matching function (two-pass: exact first, then synonyms/stems) ─────
+  // ── Label detection + grouped concept extraction ──────────────
+  sc += 'function hasLabelStructure(normText) {\n';
+  sc += '  var words = normText.split(" ");\n';
+  sc += '  var LBLS = ["a","b","c","d","e","f","g","h","i","j","1","2","3","4","5","6","7","8","9"];\n';
+  sc += '  var n = 0;\n';
+  sc += '  for (var i = 0; i < words.length; i++) { if (LBLS.indexOf(words[i]) !== -1 && words[i].length === 1) n++; }\n';
+  sc += '  return n >= 2;\n';
+  sc += '}\n\n';
+
+  sc += 'function extractConceptGroups(modelAnswer) {\n';
+  sc += '  if (!modelAnswer) return [];\n';
+  sc += '  var norm = normalizeText(modelAnswer);\n';
+  sc += '  var words = norm.split(" ");\n';
+  sc += '  var LBLS = ["a","b","c","d","e","f","g","h","i","j","1","2","3","4","5","6","7","8","9"];\n';
+  sc += '  if (!hasLabelStructure(norm)) {\n';
+  sc += '    var plain = [];\n';
+  sc += '    for (var pi = 0; pi < words.length; pi++) {\n';
+  sc += '      if (words[pi].length >= 2 && !isStopWord(words[pi])) plain.push([words[pi]]);\n';
+  sc += '    }\n';
+  sc += '    return plain;\n';
+  sc += '  }\n';
+  sc += '  var segments = [], cur = [];\n';
+  sc += '  for (var wi = 0; wi < words.length; wi++) {\n';
+  sc += '    if (LBLS.indexOf(words[wi]) !== -1 && words[wi].length === 1) { if (cur.length > 0) segments.push(cur); cur = []; }\n';
+  sc += '    else cur.push(words[wi]);\n';
+  sc += '  }\n';
+  sc += '  if (cur.length > 0) segments.push(cur);\n';
+  sc += '  var groups = [];\n';
+  sc += '  for (var si = 0; si < segments.length; si++) {\n';
+  sc += '    var seg = segments[si], filtered = [];\n';
+  sc += '    for (var fi = 0; fi < seg.length; fi++) {\n';
+  sc += '      var fw = seg[fi];\n';
+  sc += '      if (fw !== "or" && fw.length >= 2 && !isStopWord(fw) && filtered.indexOf(fw) === -1) filtered.push(fw);\n';
+  sc += '    }\n';
+  sc += '    if (filtered.length > 0) groups.push(filtered);\n';
+  sc += '  }\n';
+  sc += '  return groups;\n';
+  sc += '}\n\n';
+
+  // ── Core matching function ─────────────────────────────────────
   sc += 'function matchWithSynonyms(studentText, modelText) {\n';
   sc += '  if (!studentText || !modelText) return { score: 0, matches: [], totalConcepts: 0, matched: 0 };\n';
   sc += '  var sNorm = normalizeText(studentText);\n';
-  sc += '  var mNorm = normalizeText(modelText);\n';
-  sc += '  if (!sNorm || !mNorm) return { score: 0, matches: [], totalConcepts: 0, matched: 0 };\n';
+  sc += '  if (!sNorm) return { score: 0, matches: [], totalConcepts: 0, matched: 0 };\n';
   sc += '  var studentWords = sNorm.split(" ");\n';
-  sc += '  var modelWordsRaw = mNorm.split(" ");\n';
-  sc += '  // Build filtered concept list from model answer\n';
-  sc += '  var modelWords = [];\n';
-  sc += '  for (var k = 0; k < modelWordsRaw.length; k++) {\n';
-  sc += '    var wk = modelWordsRaw[k];\n';
-  sc += '    if (wk.length >= 2 && !isStopWord(wk)) modelWords.push(wk);\n';
-  sc += '  }\n';
-  sc += '  var usedIdx = [];\n';
-  sc += '  var matches = [];\n';
-  sc += '  var pending = [];\n';
-  sc += '  // PASS 1 — exact word-for-word matches (highest confidence)\n';
-  sc += '  for (var mi = 0; mi < modelWords.length; mi++) {\n';
-  sc += '    var mw = modelWords[mi];\n';
+  sc += '  var groups = extractConceptGroups(modelText);\n';
+  sc += '  if (groups.length === 0) return { score: 0, matches: [], totalConcepts: 0, matched: 0 };\n';
+  sc += '  var usedIdx = [], matches = [], matched = 0;\n';
+  sc += '  for (var gi = 0; gi < groups.length; gi++) {\n';
+  sc += '    var group = groups[gi];\n';
+  sc += '    // Expand group with synonyms from SYNONYMS database\n';
+  sc += '    var expanded = group.slice();\n';
+  sc += '    for (var xi = 0; xi < group.length; xi++) {\n';
+  sc += '      var xs = getSynonyms(group[xi]);\n';
+  sc += '      for (var xs2 = 0; xs2 < xs.length; xs2++) { if (expanded.indexOf(xs[xs2]) === -1) expanded.push(xs[xs2]); }\n';
+  sc += '    }\n';
   sc += '    var found = false;\n';
-  sc += '    for (var si = 0; si < studentWords.length; si++) {\n';
+  sc += '    // Pass 1: exact match\n';
+  sc += '    for (var si = 0; si < studentWords.length && !found; si++) {\n';
   sc += '      if (usedIdx.indexOf(si) !== -1) continue;\n';
-  sc += '      if (studentWords[si] === mw) {\n';
-  sc += '        found = true; usedIdx.push(si);\n';
-  sc += '        matches.push({ concept: mw, match: studentWords[si] }); break;\n';
-  sc += '      }\n';
+  sc += '      if (expanded.indexOf(studentWords[si]) !== -1) { found = true; usedIdx.push(si); matches.push({ concept: group[0], match: studentWords[si] }); }\n';
   sc += '    }\n';
-  sc += '    if (!found) pending.push(mw);\n';
-  sc += '  }\n';
-  sc += '  // PASS 2 — synonym + stem matches for unmatched concepts\n';
-  sc += '  var matched = modelWords.length - pending.length;\n';
-  sc += '  for (var pi = 0; pi < pending.length; pi++) {\n';
-  sc += '    var mw2 = pending[pi];\n';
-  sc += '    var syns = getSynonyms(mw2);\n';
-  sc += '    var acceptable = [mw2].concat(syns || []);\n';
-  sc += '    var found2 = false;\n';
-  sc += '    for (var si2 = 0; si2 < studentWords.length; si2++) {\n';
-  sc += '      if (usedIdx.indexOf(si2) !== -1) continue;\n';
-  sc += '      var sw2 = studentWords[si2];\n';
-  sc += '      if (acceptable.indexOf(sw2) !== -1) {\n';
-  sc += '        found2 = true; usedIdx.push(si2);\n';
-  sc += '        matches.push({ concept: mw2, match: sw2 }); break;\n';
-  sc += '      }\n';
-  sc += '    }\n';
-  sc += '    if (!found2) {\n';
-  sc += '      // Stem matching — require minimum 5-char stem to avoid false positives\n';
-  sc += '      for (var si3 = 0; si3 < studentWords.length; si3++) {\n';
-  sc += '        if (usedIdx.indexOf(si3) !== -1) continue;\n';
-  sc += '        var sw3 = studentWords[si3];\n';
-  sc += '        for (var ai = 0; ai < acceptable.length; ai++) {\n';
-  sc += '          var acc = acceptable[ai];\n';
-  sc += '          if (acc.length >= 5 && sw3.length >= 5) {\n';
-  sc += '            var stem = acc.slice(0, Math.max(5, acc.length - 2));\n';
-  sc += '            if (sw3.indexOf(stem) === 0 || stem.indexOf(sw3) === 0) {\n';
-  sc += '              found2 = true; usedIdx.push(si3);\n';
-  sc += '              matches.push({ concept: mw2, match: sw3 + " (partial)" }); break;\n';
+  sc += '    // Pass 2: stem match\n';
+  sc += '    if (!found) {\n';
+  sc += '      for (var si2 = 0; si2 < studentWords.length && !found; si2++) {\n';
+  sc += '        if (usedIdx.indexOf(si2) !== -1) continue;\n';
+  sc += '        for (var ai = 0; ai < expanded.length && !found; ai++) {\n';
+  sc += '          if (expanded[ai].length >= 5 && studentWords[si2].length >= 5) {\n';
+  sc += '            var stem = expanded[ai].slice(0, Math.max(5, expanded[ai].length - 2));\n';
+  sc += '            if (studentWords[si2].indexOf(stem) === 0 || stem.indexOf(studentWords[si2]) === 0) {\n';
+  sc += '              found = true; usedIdx.push(si2); matches.push({ concept: group[0], match: studentWords[si2] + " (partial)" });\n';
   sc += '            }\n';
   sc += '          }\n';
   sc += '        }\n';
-  sc += '        if (found2) break;\n';
   sc += '      }\n';
   sc += '    }\n';
-  sc += '    if (found2) matched++;\n';
+  sc += '    if (found) matched++;\n';
   sc += '  }\n';
-  sc += '  var totalConcepts = modelWords.length;\n';
+  sc += '  var totalConcepts = groups.length;\n';
   sc += '  var scorePct = totalConcepts > 0 ? Math.round((matched / totalConcepts) * 100) : 0;\n';
   sc += '  return { score: scorePct, matches: matches, totalConcepts: totalConcepts, matched: matched };\n';
   sc += '}\n\n';
@@ -4862,44 +4875,83 @@ function teSubmitExam() {
     }
     return [];
   }
+  function teHasLabels(normText) {
+    var words = normText.split(' ');
+    var LBLS = ['a','b','c','d','e','f','g','h','i','j','1','2','3','4','5','6','7','8','9'];
+    var n = 0;
+    for (var i = 0; i < words.length; i++) { if (LBLS.indexOf(words[i]) !== -1 && words[i].length === 1) n++; }
+    return n >= 2;
+  }
+  function teExtractGroups(modelAnswer) {
+    if (!modelAnswer) return [];
+    var norm = teNorm(modelAnswer);
+    var words = norm.split(' ');
+    var LBLS = ['a','b','c','d','e','f','g','h','i','j','1','2','3','4','5','6','7','8','9'];
+    if (!teHasLabels(norm)) {
+      // Plain essay: each significant word is its own concept
+      var plain = [];
+      for (var pi = 0; pi < words.length; pi++) {
+        if (words[pi].length >= 2 && !teIsStop(words[pi])) plain.push([words[pi]]);
+      }
+      return plain;
+    }
+    // Labeled: split on label boundaries, group alternatives
+    var segments = [], cur = [];
+    for (var wi = 0; wi < words.length; wi++) {
+      if (LBLS.indexOf(words[wi]) !== -1 && words[wi].length === 1) {
+        if (cur.length > 0) segments.push(cur);
+        cur = [];
+      } else { cur.push(words[wi]); }
+    }
+    if (cur.length > 0) segments.push(cur);
+    var groups = [];
+    for (var si = 0; si < segments.length; si++) {
+      var seg = segments[si], filtered = [];
+      for (var fi = 0; fi < seg.length; fi++) {
+        var fw = seg[fi];
+        if (fw !== 'or' && fw.length >= 2 && !teIsStop(fw) && filtered.indexOf(fw) === -1) filtered.push(fw);
+      }
+      if (filtered.length > 0) groups.push(filtered);
+    }
+    return groups;
+  }
   function teMatchAnswer(studentText, modelText) {
     if (!studentText || !modelText) return { matched:0, totalConcepts:0 };
-    var sN = teNorm(studentText), mN = teNorm(modelText);
-    if (!sN || !mN) return { matched:0, totalConcepts:0 };
-    var sW = sN.split(' '), mR = mN.split(' '), mW = [];
-    for (var k = 0; k < mR.length; k++) { if (mR[k].length >= 2 && !teIsStop(mR[k])) mW.push(mR[k]); }
-    var used = [], matched = 0, pending = [];
-    // Pass 1: exact
-    for (var mi = 0; mi < mW.length; mi++) {
-      var mw = mW[mi], found = false;
-      for (var si = 0; si < sW.length; si++) {
+    var sN = teNorm(studentText);
+    if (!sN) return { matched:0, totalConcepts:0 };
+    var sW = sN.split(' ');
+    var groups = teExtractGroups(modelText);
+    if (groups.length === 0) return { matched:0, totalConcepts:0 };
+    var used = [], matched = 0;
+    for (var gi = 0; gi < groups.length; gi++) {
+      var group = groups[gi];
+      // Expand group with synonyms
+      var expanded = group.slice();
+      for (var xi = 0; xi < group.length; xi++) {
+        var xs2 = teSyns(group[xi]);
+        for (var xs3 = 0; xs3 < xs2.length; xs3++) { if (expanded.indexOf(xs2[xs3]) === -1) expanded.push(xs2[xs3]); }
+      }
+      var found = false;
+      // Pass 1: exact match
+      for (var si = 0; si < sW.length && !found; si++) {
         if (used.indexOf(si) !== -1) continue;
-        if (sW[si] === mw) { found = true; used.push(si); break; }
+        if (expanded.indexOf(sW[si]) !== -1) { found = true; used.push(si); }
       }
-      if (found) matched++; else pending.push(mw);
-    }
-    // Pass 2: synonyms + stems
-    for (var pi = 0; pi < pending.length; pi++) {
-      var mw2 = pending[pi], syns = teSyns(mw2), acc = [mw2].concat(syns || []), f2 = false;
-      for (var si2 = 0; si2 < sW.length; si2++) {
-        if (used.indexOf(si2) !== -1) continue;
-        if (acc.indexOf(sW[si2]) !== -1) { f2 = true; used.push(si2); break; }
-      }
-      if (!f2) {
-        for (var si3 = 0; si3 < sW.length; si3++) {
-          if (used.indexOf(si3) !== -1) continue;
-          for (var ai = 0; ai < acc.length; ai++) {
-            if (acc[ai].length >= 5 && sW[si3].length >= 5) {
-              var stem = acc[ai].slice(0, Math.max(5, acc[ai].length - 2));
-              if (sW[si3].indexOf(stem) === 0 || stem.indexOf(sW[si3]) === 0) { f2 = true; used.push(si3); break; }
+      // Pass 2: stem match
+      if (!found) {
+        for (var si2 = 0; si2 < sW.length && !found; si2++) {
+          if (used.indexOf(si2) !== -1) continue;
+          for (var ai = 0; ai < expanded.length && !found; ai++) {
+            if (expanded[ai].length >= 5 && sW[si2].length >= 5) {
+              var stem = expanded[ai].slice(0, Math.max(5, expanded[ai].length - 2));
+              if (sW[si2].indexOf(stem) === 0 || stem.indexOf(sW[si2]) === 0) { found = true; used.push(si2); }
             }
           }
-          if (f2) break;
         }
       }
-      if (f2) matched++;
+      if (found) matched++;
     }
-    return { matched: matched, totalConcepts: mW.length };
+    return { matched: matched, totalConcepts: groups.length };
   }
   function teAutoMark(studentAnswer, modelAnswer, maxMarks) {
     if (!studentAnswer || !studentAnswer.trim()) return { score:0, feedback:'No answer provided — 0 marks awarded.' };
@@ -6836,7 +6888,7 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
   function showLogin() {
     document.body.innerHTML = '';
     var style = document.createElement('style');
-    style.textContent = ':root{--g:#c9a227;--n:#0d1b4b;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Segoe UI",Arial,sans-serif;background:#081236;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;}.lc{background:linear-gradient(135deg,#0d1b4b,#1e3080);border:2px solid var(--g);border-radius:16px;padding:28px 22px;max-width:440px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.5);}.lc input{width:100%;padding:10px 14px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.5);border-radius:8px;color:#fff;font-size:.9rem;margin-bottom:14px;outline:none;}.lc input:focus{border-color:var(--g);}.btn-s{width:100%;padding:13px;background:linear-gradient(135deg,var(--g),#a07f18);color:#0d1b4b;font-weight:800;font-size:1rem;border:none;border-radius:9px;cursor:pointer;}';
+    style.textContent = ':root{--g:#c9a227;--n:#0d1b4b;}*{box-sizing:border-box;margin:0;padding:0;}body{font-family:"Segoe UI",Arial,sans-serif;background:#081236;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;}.lc{background:linear-gradient(135deg,#0d1b4b,#1e3080);border:2px solid var(--g);border-radius:16px;padding:28px 22px;max-width:440px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.5);}.lc input[type=text]{width:100%;padding:10px 14px;background:rgba(8,18,54,.9) !important;border:1.5px solid rgba(201,162,39,.5);border-radius:8px;color:#ffffff !important;font-size:.9rem;margin-bottom:14px;outline:none;caret-color:#c9a227;}.lc input[type=text]:focus{border-color:var(--g) !important;box-shadow:0 0 0 3px rgba(201,162,39,.2) !important;background:rgba(8,18,54,1) !important;color:#ffffff !important;}.lc input[type=text]::placeholder{color:#8899cc !important;font-style:italic;}.btn-s{width:100%;padding:13px;background:linear-gradient(135deg,var(--g),#a07f18);color:#0d1b4b;font-weight:800;font-size:1rem;border:none;border-radius:9px;cursor:pointer;}';
     document.head.appendChild(style);
 
     var div = document.createElement('div');
@@ -7122,50 +7174,78 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
       for (var i=0; i<stops.length; i++) if (w === stops[i]) return true;
       return false;
     }
+    function amHasLabels(normText) {
+      var words = normText.split(' ');
+      var LBLS = ['a','b','c','d','e','f','g','h','i','j','1','2','3','4','5','6','7','8','9'];
+      var n = 0;
+      for (var i=0; i<words.length; i++) { if (LBLS.indexOf(words[i])!==-1 && words[i].length===1) n++; }
+      return n >= 2;
+    }
+    function amExtractGroups(modelAnswer) {
+      if (!modelAnswer) return [];
+      var norm = amNormalize(modelAnswer);
+      var words = norm.split(' ');
+      var LBLS = ['a','b','c','d','e','f','g','h','i','j','1','2','3','4','5','6','7','8','9'];
+      if (!amHasLabels(norm)) {
+        var plain = [];
+        for (var pi=0; pi<words.length; pi++) {
+          if (words[pi].length>=2 && !amIsStop(words[pi])) plain.push([words[pi]]);
+        }
+        return plain;
+      }
+      var segments=[], cur=[];
+      for (var wi=0; wi<words.length; wi++) {
+        if (LBLS.indexOf(words[wi])!==-1 && words[wi].length===1) { if (cur.length>0) segments.push(cur); cur=[]; }
+        else cur.push(words[wi]);
+      }
+      if (cur.length>0) segments.push(cur);
+      var groups=[];
+      for (var si=0; si<segments.length; si++) {
+        var seg=segments[si], filtered=[];
+        for (var fi=0; fi<seg.length; fi++) {
+          var fw=seg[fi];
+          if (fw!=='or' && fw.length>=2 && !amIsStop(fw) && filtered.indexOf(fw)===-1) filtered.push(fw);
+        }
+        if (filtered.length>0) groups.push(filtered);
+      }
+      return groups;
+    }
     function amMatch(studentText, modelText) {
       if (!studentText || !modelText) return { score:0, matches:[], totalConcepts:0, matched:0 };
       var sNorm = amNormalize(studentText);
-      var mNorm = amNormalize(modelText);
-      if (!sNorm || !mNorm) return { score:0, matches:[], totalConcepts:0, matched:0 };
+      if (!sNorm) return { score:0, matches:[], totalConcepts:0, matched:0 };
       var sWords = sNorm.split(' ');
-      var mRaw   = mNorm.split(' ');
-      var mWords = [];
-      for (var k=0; k<mRaw.length; k++) { if (mRaw[k].length >= 2 && !amIsStop(mRaw[k])) mWords.push(mRaw[k]); }
-      var usedIdx=[], matches=[], pending=[];
-      // Pass 1: exact matches
-      for (var mi=0; mi<mWords.length; mi++) {
-        var mw=mWords[mi], found=false;
-        for (var si=0; si<sWords.length; si++) {
+      var groups = amExtractGroups(modelText);
+      if (groups.length===0) return { score:0, matches:[], totalConcepts:0, matched:0 };
+      var usedIdx=[], matches=[], matched=0;
+      for (var gi=0; gi<groups.length; gi++) {
+        var group=groups[gi], expanded=group.slice(), found=false;
+        for (var xi=0; xi<group.length; xi++) {
+          var xs2=amGetSynonyms(group[xi]);
+          for (var xs3=0; xs3<xs2.length; xs3++) { if (expanded.indexOf(xs2[xs3])===-1) expanded.push(xs2[xs3]); }
+        }
+        // Pass 1: exact
+        for (var si=0; si<sWords.length && !found; si++) {
           if (usedIdx.indexOf(si)!==-1) continue;
-          if (sWords[si]===mw) { found=true; usedIdx.push(si); matches.push({concept:mw,match:sWords[si]}); break; }
+          if (expanded.indexOf(sWords[si])!==-1) { found=true; usedIdx.push(si); matches.push({concept:group[0],match:sWords[si]}); }
         }
-        if (!found) pending.push(mw);
-      }
-      // Pass 2: synonyms + stems
-      var matched = mWords.length - pending.length;
-      for (var pi=0; pi<pending.length; pi++) {
-        var mw2=pending[pi], syns=amGetSynonyms(mw2), acc=[mw2].concat(syns||[]), found2=false;
-        for (var si2=0; si2<sWords.length; si2++) {
-          if (usedIdx.indexOf(si2)!==-1) continue;
-          if (acc.indexOf(sWords[si2])!==-1) { found2=true; usedIdx.push(si2); matches.push({concept:mw2,match:sWords[si2]}); break; }
-        }
-        if (!found2) {
-          for (var si3=0; si3<sWords.length; si3++) {
-            if (usedIdx.indexOf(si3)!==-1) continue;
-            for (var ai=0; ai<acc.length; ai++) {
-              if (acc[ai].length>=5 && sWords[si3].length>=5) {
-                var stem=acc[ai].slice(0,Math.max(5,acc[ai].length-2));
-                if (sWords[si3].indexOf(stem)===0||stem.indexOf(sWords[si3])===0) {
-                  found2=true; usedIdx.push(si3); matches.push({concept:mw2,match:sWords[si3]+' (partial)'}); break;
+        // Pass 2: stem
+        if (!found) {
+          for (var si2=0; si2<sWords.length && !found; si2++) {
+            if (usedIdx.indexOf(si2)!==-1) continue;
+            for (var ai=0; ai<expanded.length && !found; ai++) {
+              if (expanded[ai].length>=5 && sWords[si2].length>=5) {
+                var stem=expanded[ai].slice(0,Math.max(5,expanded[ai].length-2));
+                if (sWords[si2].indexOf(stem)===0||stem.indexOf(sWords[si2])===0) {
+                  found=true; usedIdx.push(si2); matches.push({concept:group[0],match:sWords[si2]+' (partial)'});
                 }
               }
             }
-            if (found2) break;
           }
         }
-        if (found2) matched++;
+        if (found) matched++;
       }
-      var total=mWords.length;
+      var total=groups.length;
       return { score: total>0?Math.round((matched/total)*100):0, matches:matches, totalConcepts:total, matched:matched };
     }
     function amMarkAnswer(studentAnswer, modelAnswer, maxMarks) {
@@ -7209,30 +7289,53 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
   }
 
   function showOnlineResult(r, gc, ge, score, max, right, total){
-    var wa=(s.waNumber||'+260972619148').replace(/[^0-9+]/g,'');
-    var msg='MTC Exam Result\n\nMOUNTAIN TUITION CENTRE\nExcellence in Education\n\nExam: '+r.examTitle+'\nStudent: '+r.studentName+'\nExam No: '+r.studentNum+'\nScore: '+score+'/'+max+' ('+r.pct+'%)\nGrade: '+r.grade+'\nCorrect: '+right+'/'+total+' MCQs\nDate: '+new Date().toLocaleString()+'\n#Attempt '+r.attempt;
+    var wa = (s.waNumber || '+260972619148').replace(/[^0-9+]/g, '');
+
+    // Build full WhatsApp message in a closure variable — NOT embedded in HTML
+    var waMsg = 'MTC Exam Result\n\nMOUNTAIN TUITION CENTRE\nExcellence in Education\n\n';
+    waMsg += 'Exam: '    + (r.examTitle  || '') + '\n';
+    waMsg += 'Subject: ' + (r.subject    || '') + (r.grade ? ' ' + r.grade : '') + '\n';
+    waMsg += 'Student: ' + (r.studentName|| '') + '\n';
+    waMsg += 'Exam No: ' + (r.studentNum || '') + '\n';
+    waMsg += 'MCQ Score: ' + score + '/' + max + ' marks\n';
+    if (r.autoMax > 0) waMsg += 'Auto-Marked: ' + r.autoScore + '/' + r.autoMax + ' marks\n';
+    waMsg += 'Total Score: ' + (r.totalScore || score) + '/' + (r.totalMax || max) + ' marks (' + r.pct + '%)\n';
+    waMsg += 'Grade: '   + (r.grade      || '') + '\n';
+    waMsg += 'Date: '    + new Date().toLocaleString() + '\n';
+    waMsg += 'Attempt: #' + (r.attempt   || 1)  + '\n';
+    waMsg += '\nSent via MTC AI EXAMS';
+
     document.body.innerHTML =
       '<div style="min-height:100vh;background:#081236;font-family:Segoe UI,Arial,sans-serif;padding:16px;display:flex;align-items:flex-start;justify-content:center;">' +
       '<div style="max-width:520px;width:100%;">' +
       '<div style="background:linear-gradient(135deg,#0d1b4b,#1e3080);border:3px solid #c9a227;border-radius:16px;padding:24px;text-align:center;margin-bottom:14px;">' +
       '<div style="font-size:1rem;font-weight:800;color:#c9a227;margin-bottom:2px;">MOUNTAIN TUITION CENTRE</div>' +
       '<div style="font-size:.78rem;color:#8899cc;margin-bottom:12px;">Excellence in Education</div>' +
-      '<div style="font-size:1rem;font-weight:700;color:#d4e0ff;margin-bottom:12px;">'+h(r.examTitle)+'</div>' +
-      '<div style="font-size:2.8rem;font-weight:900;color:#c9a227;line-height:1.1;margin:8px 0;">'+r.pct+'%</div>' +
-      '<div style="font-size:1.7rem;font-weight:900;color:'+gc+';margin-bottom:14px;">'+ge+' '+r.grade+'</div>' +
+      '<div style="font-size:1rem;font-weight:700;color:#d4e0ff;margin-bottom:12px;">' + h(r.examTitle) + '</div>' +
+      '<div style="font-size:2.8rem;font-weight:900;color:#c9a227;line-height:1.1;margin:8px 0;">' + r.pct + '%</div>' +
+      '<div style="font-size:1.7rem;font-weight:900;color:' + gc + ';margin-bottom:14px;">' + ge + ' ' + r.grade + '</div>' +
       '<div style="background:rgba(0,0,0,.3);border-radius:10px;padding:12px;text-align:left;margin-bottom:14px;">' +
-      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Student</span><span style="color:#e8c04a;font-weight:600;">'+h(r.studentName)+'</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Exam No</span><span>'+h(r.studentNum)+'</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">MCQ Score</span><span>'+score+'/'+max+' (MCQ)</span></div>' +
-      (r.autoMax > 0 ? '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>\uD83E\uDD16 Auto-Marked</span><span style=\'color:#81c784;font-weight:700;\'>'+r.autoScore+'/'+r.autoMax+' marks</span></div>' : '') +
-      '<div style=\'display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;\'><span style=\'color:#aab4d4;\'>Total Score</span><span style=\'color:#c9a227;font-weight:900;\'>'+(r.totalScore||score)+'/'+(r.totalMax||max)+' marks</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Grade</span><span style="color:'+gc+';font-weight:800;">'+r.grade+'</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Student</span><span style="color:#e8c04a;font-weight:600;">' + h(r.studentName) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Exam No</span><span>' + h(r.studentNum) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">MCQ Score</span><span>' + score + '/' + max + ' marks</span></div>' +
+      (r.autoMax > 0 ? '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">\uD83E\uDD16 Auto-Marked</span><span style="color:#81c784;font-weight:700;">' + r.autoScore + '/' + r.autoMax + ' marks</span></div>' : '') +
+      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Total Score</span><span style="color:#c9a227;font-weight:900;">' + (r.totalScore || score) + '/' + (r.totalMax || max) + ' marks</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(201,162,39,.15);font-size:.85rem;"><span style="color:#aab4d4;">Grade</span><span style="color:' + gc + ';font-weight:800;">' + r.grade + '</span></div>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;">' +
-      '<button onclick="window.open(\'https://wa.me/'+wa+'?text=\'+encodeURIComponent(\''+msg.replace(/'/g,"\\'")+'\'),\'_blank\')" style="padding:11px 18px;background:#25D366;color:#fff;font-weight:800;border:none;border-radius:9px;cursor:pointer;font-size:.88rem;">&#128241; Send to Teacher</button>' +
+      '<button id="online-wa-btn" style="padding:11px 18px;background:#25D366;color:#fff;font-weight:800;border:none;border-radius:9px;cursor:pointer;font-size:.88rem;">&#128241; Send to Teacher</button>' +
       '<button onclick="location.reload()" style="padding:11px 18px;background:#c9a227;color:#0d1b4b;font-weight:800;border:none;border-radius:9px;cursor:pointer;font-size:.88rem;">&#8635; Retake</button>' +
       '</div>' +
       '</div></div></div>';
+
+    // Attach WhatsApp send via addEventListener — avoids all inline HTML escaping issues
+    var waBtn = document.getElementById('online-wa-btn');
+    if (waBtn) {
+      waBtn.addEventListener('click', function() {
+        var url = 'https://wa.me/' + wa + '?text=' + encodeURIComponent(waMsg);
+        window.open(url, '_blank');
+      });
+    }
   }
 
   showLogin();
