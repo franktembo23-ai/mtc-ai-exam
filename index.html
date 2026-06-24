@@ -583,6 +583,7 @@ select option { background: #ffffff; color: #1a2744; }
           <option>Grade 7</option><option>Grade 8</option><option>Grade 9</option>
           <option>Grade 10</option><option>Grade 11</option><option>Grade 12</option>
           <option>GCE</option>
+          <option>Form 1</option><option>Form 2</option><option>Form 3</option><option>Form 4</option>
         </select>
       </div>
     </div>
@@ -848,6 +849,10 @@ select option { background: #ffffff; color: #1a2744; }
           <option value="Grade 11">Grade 11</option>
           <option value="Grade 12" selected>Grade 12</option>
           <option value="GCE">GCE Level</option>
+          <option value="Form 1">Form 1</option>
+          <option value="Form 2">Form 2</option>
+          <option value="Form 3">Form 3</option>
+          <option value="Form 4">Form 4</option>
           <option value="Beginner">Beginner</option>
           <option value="Intermediate">Intermediate</option>
           <option value="Advanced">Advanced</option>
@@ -962,6 +967,10 @@ select option { background: #ffffff; color: #1a2744; }
         <button class="btn te-grade-btn" id="te-grade-btn-Grade 7"  data-grade="Grade 7"  onclick="teSelectGrade('Grade 7')"  style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128214; Grade 7</button>
         <button class="btn te-grade-btn" id="te-grade-btn-Grade 12" data-grade="Grade 12" onclick="teSelectGrade('Grade 12')" style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#127891; Grade 12</button>
         <button class="btn te-grade-btn" id="te-grade-btn-GCE"      data-grade="GCE"      onclick="teSelectGrade('GCE')"      style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128220; GCE</button>
+        <button class="btn te-grade-btn" id="te-grade-btn-Form 1"   data-grade="Form 1"   onclick="teSelectGrade('Form 1')"   style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128196; Form 1</button>
+        <button class="btn te-grade-btn" id="te-grade-btn-Form 2"   data-grade="Form 2"   onclick="teSelectGrade('Form 2')"   style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128196; Form 2</button>
+        <button class="btn te-grade-btn" id="te-grade-btn-Form 3"   data-grade="Form 3"   onclick="teSelectGrade('Form 3')"   style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128196; Form 3</button>
+        <button class="btn te-grade-btn" id="te-grade-btn-Form 4"   data-grade="Form 4"   onclick="teSelectGrade('Form 4')"   style="background:var(--navy-light);color:#fff;border:1px solid rgba(201,162,39,0.3);padding:11px 18px;font-weight:700;">&#128196; Form 4</button>
         <button class="btn btn-navy btn-sm" id="te-grade-reset-btn" onclick="teResetGradeFilter()" style="display:none;margin-left:auto;">&#10005; All Grades</button>
       </div>
 
@@ -4299,7 +4308,11 @@ var PERF_KEY = 'mtc_performance_records';
 var TE_GRADE_SUBJECTS = {
   'Grade 7': ['English','Mathematics','Integrated Science','Social Studies','Technology Studies','Expressive Arts','Home Economics','Special Paper 1','Special Paper 2','Cinyanja'],
   'Grade 12': ['English','Mathematics','Biology','Chemistry','Physics'],
-  'GCE': ['English','Mathematics','Biology','Chemistry','Physics']
+  'GCE': ['English','Mathematics','Biology','Chemistry','Physics'],
+  'Form 1': ['English','Mathematics','Biology','Chemistry','Physics','Computer Studies','Principles of Accounts'],
+  'Form 2': ['English','Mathematics','Biology','Chemistry','Physics','Computer Studies','Principles of Accounts'],
+  'Form 3': ['English','Mathematics','Biology','Chemistry','Physics','Computer Studies','Principles of Accounts'],
+  'Form 4': ['English','Mathematics','Biology','Chemistry','Physics','Computer Studies','Principles of Accounts']
 };
 
 var teActiveGrade = '';   // '' = All Grades, else 'Grade 7' / 'Grade 12' / 'GCE'
@@ -4427,7 +4440,7 @@ function teSelectGrade(grade) {
   teActiveGrade = grade;
 
   // Highlight active grade button
-  var grades = ['Grade 7','Grade 12','GCE'];
+  var grades = ['Grade 7','Grade 12','GCE','Form 1','Form 2','Form 3','Form 4'];
   for (var i = 0; i < grades.length; i++) {
     var btn = document.getElementById('te-grade-btn-' + grades[i]);
     if (btn) {
@@ -4478,7 +4491,7 @@ function teSelectGrade(grade) {
 
 function teResetGradeFilter() {
   teActiveGrade = '';
-  var grades = ['Grade 7','Grade 12','GCE'];
+  var grades = ['Grade 7','Grade 12','GCE','Form 1','Form 2','Form 3','Form 4'];
   for (var i = 0; i < grades.length; i++) {
     var btn = document.getElementById('te-grade-btn-' + grades[i]);
     if (btn) { btn.style.background = 'var(--navy-light)'; btn.style.color = '#fff'; btn.style.borderColor = 'rgba(201,162,39,0.3)'; }
