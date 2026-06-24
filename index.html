@@ -425,7 +425,33 @@ select option { background: #ffffff; color: #1a2744; }
   border-color: #c5cde8;
 }
 
-/* Take Exam tab — student name/number inputs */
+/* ── Insertable Table styles ─────────────────────────────────── */
+.q-inserted-table { width:100%; border-collapse:collapse; margin:8px 0; font-size:0.85rem; }
+.q-inserted-table th, .q-inserted-table td {
+  border:1.5px solid #b0bbdd; padding:6px 10px; text-align:center; vertical-align:middle;
+}
+.q-inserted-table th { background:#e8ecf8; font-weight:700; color:#1a2744; }
+.q-inserted-table tbody tr:nth-child(even) { background:#f4f6fb; }
+/* Dark mode (for Take Exam / standalone / online) */
+.q-tbl-dark { width:100%; border-collapse:collapse; margin:8px 0; font-size:0.88rem; color:#d4e0ff; }
+.q-tbl-dark th, .q-tbl-dark td {
+  border:1.5px solid rgba(201,162,39,0.35); padding:6px 10px; text-align:center; vertical-align:middle;
+}
+.q-tbl-dark th { background:rgba(201,162,39,0.12); font-weight:700; color:#c9a227; }
+.q-tbl-dark tbody tr:nth-child(even) { background:rgba(255,255,255,0.04); }
+/* Table builder grid in modal */
+.tbl-builder-grid { border-collapse:collapse; width:100%; margin:10px 0; }
+.tbl-builder-grid th input, .tbl-builder-grid td input {
+  width:100%; border:none; background:transparent; font-size:0.82rem;
+  text-align:center; color:#1a2744; padding:4px; outline:none; font-family:inherit;
+}
+.tbl-builder-grid th { background:#e8ecf8; border:1.5px solid #b0bbdd; padding:2px; }
+.tbl-builder-grid td { background:#fff; border:1.5px solid #b0bbdd; padding:2px; }
+.tbl-builder-grid th input { font-weight:700; }
+.tbl-insert-btn { background:rgba(201,162,39,0.12); border:1px dashed rgba(201,162,39,0.5);
+  color:#c9a227; font-size:0.75rem; padding:3px 8px; border-radius:5px; cursor:pointer;
+  font-weight:600; margin-left:6px; }
+.tbl-insert-btn:hover { background:rgba(201,162,39,0.25); }
 #tab-takeexam input[type=text] {
   background: #ffffff;
   color: #1a2744;
@@ -1799,8 +1825,18 @@ function buildQuestionHTML(q, idx) {
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
   html += '<label style="margin:0;">Question Text</label>';
   html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;text&quot;,null)">&#129518; Math</button>';
+  html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;qtext&quot;,' + qid + ',null)">&#9783; Table</button>';
   html += '</div>';
   html += '<textarea id="qtext-' + qid + '" placeholder="Type your question here... (Ctrl+V to paste image)" oninput="updateQField(' + qid + ',&quot;text&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.text) + '</textarea>';
+  // Show existing table if present
+  if (q.tableHtml) {
+    html += '<div class="q-tbl-wrap" id="q-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
+    html += q.tableHtml;
+    html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+    html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;qtext&quot;,' + qid + ',null)">&#9783; Edit Table</button>';
+    html += '<button class="btn btn-danger btn-xs" onclick="removeQTable(' + qid + ')">&#128465; Remove Table</button>';
+    html += '</div></div>';
+  }
   html += '</div>';
 
   // Question image
@@ -1834,7 +1870,17 @@ function buildQuestionHTML(q, idx) {
       html += '<div style="display:flex;gap:6px;align-items:stretch;">';
       html += '<input type="text" id="opt-inp-' + qid + '-' + j + '" placeholder="Option ' + opt.label + ' text... (Ctrl+V to paste image)" value="' + escHtml(opt.text) + '" oninput="updateOptionText(' + qid + ',' + j + ',this.value)" data-paste-qid="' + qid + '" data-paste-optidx="' + j + '" style="flex:1;">';
       html += '<button type="button" class="math-kb-btn" style="flex-shrink:0;" onclick="openMathKeyboardFor(' + qid + ',&quot;opt&quot;,' + j + ')">&#129518;</button>';
+      html += '<button type="button" class="tbl-insert-btn" style="flex-shrink:0;" onclick="openTableBuilder(&quot;opt&quot;,' + qid + ',' + j + ')">&#9783;</button>';
       html += '</div>';
+      // Show option table if present
+      if (opt.tableHtml) {
+        html += '<div class="q-tbl-wrap" id="opt-tbl-wrap-' + qid + '-' + j + '" style="margin-top:4px;overflow-x:auto;">';
+        html += opt.tableHtml;
+        html += '<div style="display:flex;gap:6px;margin-top:3px;">';
+        html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;opt&quot;,' + qid + ',' + j + ')">&#9783; Edit</button>';
+        html += '<button class="btn btn-danger btn-xs" onclick="removeOptTable(' + qid + ',' + j + ')">&#128465;</button>';
+        html += '</div></div>';
+      }
       // Option image
       html += '<div style="margin-top:4px;">';
       if (opt.image) {
@@ -1874,8 +1920,17 @@ function buildQuestionHTML(q, idx) {
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
     html += '<label style="margin:0;">Model Answer (for teacher copy)</label>';
     html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;answer&quot;,null)">&#129518; Math</button>';
+    html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;answer&quot;,' + qid + ',null)">&#9783; Table</button>';
     html += '</div>';
     html += '<textarea id="qanswer-' + qid + '" placeholder="Enter the expected answer... (Ctrl+V to paste image into question)" oninput="updateQField(' + qid + ',&quot;answer&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.answer||'') + '</textarea>';
+    if (q.answerTableHtml) {
+      html += '<div class="q-tbl-wrap" id="q-ans-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
+      html += q.answerTableHtml;
+      html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+      html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;answer&quot;,' + qid + ',null)">&#9783; Edit</button>';
+      html += '<button class="btn btn-danger btn-xs" onclick="removeAnswerTable(' + qid + ')">&#128465;</button>';
+      html += '</div></div>';
+    }
     html += '</div>';
   }
 
@@ -1885,8 +1940,17 @@ function buildQuestionHTML(q, idx) {
     html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
     html += '<label style="margin:0;">Mark Scheme / Guidance (for teacher copy)</label>';
     html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;guidance&quot;,null)">&#129518; Math</button>';
+    html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;guidance&quot;,' + qid + ',null)">&#9783; Table</button>';
     html += '</div>';
     html += '<textarea id="qguidance-' + qid + '" placeholder="List marking points... (Ctrl+V to paste image into question)" oninput="updateQField(' + qid + ',&quot;guidance&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.guidance||'') + '</textarea>';
+    if (q.guidanceTableHtml) {
+      html += '<div class="q-tbl-wrap" id="q-guid-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
+      html += q.guidanceTableHtml;
+      html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+      html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;guidance&quot;,' + qid + ',null)">&#9783; Edit</button>';
+      html += '<button class="btn btn-danger btn-xs" onclick="removeGuidanceTable(' + qid + ')">&#128465;</button>';
+      html += '</div></div>';
+    }
     html += '</div>';
   }
 
@@ -1913,6 +1977,174 @@ function updateQField(id, field, value) {
     }
   }
   if (field === 'marks') updateHeaderDisplay();
+}
+
+// ── Table Builder ──────────────────────────────────────────────────────────────
+var _tblCtx = null; // {ctx, qid, optIdx}
+
+function openTableBuilder(ctx, qid, optIdx) {
+  _tblCtx = { ctx: ctx, qid: qid, optIdx: optIdx };
+
+  // Pre-fill rows/cols if editing an existing table
+  var existing = null;
+  var q = null;
+  for (var i = 0; i < examState.questions.length; i++) { if (examState.questions[i].id === qid) { q = examState.questions[i]; break; } }
+  if (q) {
+    if (ctx === 'qtext')    existing = q.tableHtml       || null;
+    if (ctx === 'answer')   existing = q.answerTableHtml  || null;
+    if (ctx === 'guidance') existing = q.guidanceTableHtml|| null;
+    if (ctx === 'opt' && q.options && q.options[optIdx]) existing = q.options[optIdx].tableHtml || null;
+  }
+
+  var titleMap = { qtext:'Question', opt:'MCQ Option ' + (typeof optIdx==='number'?String.fromCharCode(65+optIdx):''), answer:'Model Answer', guidance:'Mark Scheme' };
+  var bodyHtml = '';
+  bodyHtml += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">';
+  bodyHtml += '<label style="margin:0;color:#1a2744;">Rows:</label>';
+  bodyHtml += '<input id="tbl-rows" type="number" min="1" max="30" value="4" style="width:65px;color:#1a2744;background:#fff;border:1.5px solid #c5cde8;border-radius:6px;padding:5px 8px;">';
+  bodyHtml += '<label style="margin:0;color:#1a2744;">Columns:</label>';
+  bodyHtml += '<input id="tbl-cols" type="number" min="1" max="15" value="5" style="width:65px;color:#1a2744;background:#fff;border:1.5px solid #c5cde8;border-radius:6px;padding:5px 8px;">';
+  bodyHtml += '<label style="margin:0;color:#1a2744;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="tbl-has-header" checked> Header row</label>';
+  bodyHtml += '<button class="btn btn-navy btn-sm" onclick="buildTableGrid()">&#128196; Generate Grid</button>';
+  bodyHtml += '</div>';
+  bodyHtml += '<div style="overflow-x:auto;" id="tbl-grid-wrap"><p style="color:#8899cc;font-size:0.85rem;">Set rows &amp; columns above, then click Generate Grid.</p></div>';
+
+  openModal('&#9783; Insert Table — ' + (titleMap[ctx] || 'Question'), bodyHtml, function() {
+    insertTableFromBuilder();
+  }, 'Insert Table');
+
+  // Auto-generate grid if editing
+  if (existing) {
+    setTimeout(function() { buildTableGridFromHtml(existing); }, 80);
+  }
+}
+
+function buildTableGrid() {
+  var rows = parseInt(document.getElementById('tbl-rows').value) || 4;
+  var cols = parseInt(document.getElementById('tbl-cols').value) || 5;
+  var hasHeader = document.getElementById('tbl-has-header').checked;
+  if (rows < 1) rows = 1; if (rows > 30) rows = 30;
+  if (cols < 1) cols = 1; if (cols > 15) cols = 15;
+  var html = '<table class="tbl-builder-grid" id="tbl-builder-tbl"><thead><tr>';
+  for (var c = 0; c < cols; c++) {
+    html += '<th><input placeholder="' + (hasHeader ? 'Header ' + (c+1) : '') + '" id="tblc-h-' + c + '"></th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (var r = 0; r < rows; r++) {
+    html += '<tr>';
+    for (var cc = 0; cc < cols; cc++) {
+      html += '<td><input placeholder="" id="tblc-' + r + '-' + cc + '"></td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  var wrap = document.getElementById('tbl-grid-wrap');
+  if (wrap) wrap.innerHTML = html;
+}
+
+function buildTableGridFromHtml(existingHtml) {
+  // Parse existing table HTML to pre-populate the grid
+  var div = document.createElement('div');
+  div.innerHTML = existingHtml;
+  var tbl = div.querySelector('table');
+  if (!tbl) return;
+  var rows = tbl.querySelectorAll('tr');
+  if (!rows.length) return;
+  var cols = rows[0].querySelectorAll('th,td').length;
+  var dataRows = rows.length - 1; // minus header
+  var hasHeader = rows[0].querySelectorAll('th').length > 0;
+  document.getElementById('tbl-rows').value = dataRows;
+  document.getElementById('tbl-cols').value = cols;
+  if (document.getElementById('tbl-has-header')) document.getElementById('tbl-has-header').checked = hasHeader;
+  buildTableGrid();
+  // Fill in values
+  setTimeout(function() {
+    if (hasHeader) {
+      var ths = rows[0].querySelectorAll('th');
+      for (var c = 0; c < ths.length; c++) {
+        var inp = document.getElementById('tblc-h-' + c);
+        if (inp) inp.value = ths[c].textContent.trim();
+      }
+    }
+    for (var r = 1; r < rows.length; r++) {
+      var tds = rows[r].querySelectorAll('td,th');
+      for (var cc = 0; cc < tds.length; cc++) {
+        var inp2 = document.getElementById('tblc-' + (r-1) + '-' + cc);
+        if (inp2) inp2.value = tds[cc].textContent.trim();
+      }
+    }
+  }, 30);
+}
+
+function insertTableFromBuilder() {
+  var tbl = document.getElementById('tbl-builder-tbl');
+  if (!tbl) { showToast('Generate the grid first!'); return; }
+  var hasHeader = document.getElementById('tbl-has-header') && document.getElementById('tbl-has-header').checked;
+  var hInputs = tbl.querySelectorAll('thead input');
+  var dataRows = tbl.querySelectorAll('tbody tr');
+  var cols = hInputs.length || (dataRows[0] ? dataRows[0].querySelectorAll('input').length : 0);
+  if (!cols) { showToast('Table is empty.'); return; }
+
+  var tableHtml = '<table class="q-inserted-table"><thead><tr>';
+  if (hasHeader) {
+    for (var c = 0; c < hInputs.length; c++) {
+      tableHtml += '<th>' + escHtml(hInputs[c].value || '') + '</th>';
+    }
+  } else {
+    for (var cx = 0; cx < cols; cx++) tableHtml += '<th>&nbsp;</th>';
+  }
+  tableHtml += '</tr></thead><tbody>';
+  for (var r = 0; r < dataRows.length; r++) {
+    var cells = dataRows[r].querySelectorAll('input');
+    if (!cells.length) continue;
+    tableHtml += '<tr>';
+    for (var cc = 0; cc < cells.length; cc++) {
+      tableHtml += '<td>' + escHtml(cells[cc].value || '') + '</td>';
+    }
+    tableHtml += '</tr>';
+  }
+  tableHtml += '</tbody></table>';
+
+  var ctx = _tblCtx.ctx, qid = _tblCtx.qid, optIdx = _tblCtx.optIdx;
+  for (var i = 0; i < examState.questions.length; i++) {
+    var q = examState.questions[i];
+    if (q.id !== qid) continue;
+    if (ctx === 'qtext')    q.tableHtml        = tableHtml;
+    if (ctx === 'answer')   q.answerTableHtml   = tableHtml;
+    if (ctx === 'guidance') q.guidanceTableHtml = tableHtml;
+    if (ctx === 'opt' && q.options && q.options[optIdx]) q.options[optIdx].tableHtml = tableHtml;
+    break;
+  }
+  saveBankData(examState.questions.length ? getBankData() : {});
+  closeModal();
+  renderQuestions();
+  showToast('Table inserted!');
+}
+
+function removeQTable(qid) {
+  for (var i=0; i<examState.questions.length; i++) {
+    if (examState.questions[i].id===qid) { examState.questions[i].tableHtml=null; break; }
+  }
+  renderQuestions();
+}
+function removeOptTable(qid, optIdx) {
+  for (var i=0; i<examState.questions.length; i++) {
+    if (examState.questions[i].id===qid && examState.questions[i].options && examState.questions[i].options[optIdx]) {
+      examState.questions[i].options[optIdx].tableHtml=null; break;
+    }
+  }
+  renderQuestions();
+}
+function removeAnswerTable(qid) {
+  for (var i=0; i<examState.questions.length; i++) {
+    if (examState.questions[i].id===qid) { examState.questions[i].answerTableHtml=null; break; }
+  }
+  renderQuestions();
+}
+function removeGuidanceTable(qid) {
+  for (var i=0; i<examState.questions.length; i++) {
+    if (examState.questions[i].id===qid) { examState.questions[i].guidanceTableHtml=null; break; }
+  }
+  renderQuestions();
 }
 
 function updateOptionText(qid, optIdx, value) {
@@ -2638,6 +2870,7 @@ function generatePreview() {
     var q = examState.questions[i];
     html += '<div style="margin-bottom:18px; page-break-inside:avoid;">';
     html += '<div style="font-weight:bold; margin-bottom:5px;">' + (i+1) + '. ' + (q.text || '<em style="color:#999;">[No question text]</em>') + ' <span style="font-weight:normal; font-size:0.82rem; color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span></div>';
+    if (q.tableHtml) html += '<div style="overflow-x:auto;margin-bottom:6px;">' + q.tableHtml + '</div>';
     if (q.image) {
       html += '<div style="margin:8px 0; text-align:center;"><img src="' + q.image + '" style="max-width:100%; max-height:300px; border:1px solid #ddd; border-radius:6px;"></div>';
     }
@@ -2647,6 +2880,7 @@ function generatePreview() {
         html += '<div style="margin:4px 0 4px 18px; display:flex; align-items:flex-start; gap:6px;">';
         html += '<strong>' + opt.label + '.</strong> ' + (opt.text || '<em style="color:#aaa;">[empty]</em>');
         if (opt.image) html += '<img src="' + opt.image + '" style="max-width:160px; max-height:120px; border:1px solid #ccc; border-radius:4px; margin-left:6px;">';
+        if (opt.tableHtml) html += '<div style="overflow-x:auto;margin-top:4px;">' + opt.tableHtml + '</div>';
         html += '</div>';
       }
     }
@@ -2684,7 +2918,11 @@ function buildPrintWindow(isTeacher) {
   content += '.option{margin:3px 0 3px 18px;}.correct-opt{color:green;font-weight:bold;}';
   content += 'img.qimg{max-width:100%;max-height:280px;display:block;margin:8px auto;border:1px solid #ddd;border-radius:4px;}';
   content += 'img.oimg{max-width:140px;max-height:110px;vertical-align:middle;margin-left:4px;}';
-  content += '@media print{body{margin:10mm;}}';
+  content += '.q-inserted-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:0.85em;}';
+  content += '.q-inserted-table th,.q-inserted-table td{border:1.5px solid #0d1b4b;padding:5px 9px;text-align:center;}';
+  content += '.q-inserted-table th{background:#e8ecf8;font-weight:700;}';
+  content += '.q-inserted-table tbody tr:nth-child(even){background:#f4f6fb;}';
+  content += '@media print{body{margin:10mm;}.q-inserted-table{page-break-inside:avoid;}}';
   content += '</style></head><body>';
   content += '<div class="header">';
   content += '<img src="data:image/png;base64,' + logoB64 + '" style="width:75px;height:75px;border-radius:50%;"><br>';
@@ -2706,6 +2944,7 @@ function buildPrintWindow(isTeacher) {
   for (var i=0; i<examState.questions.length; i++) {
     var q = examState.questions[i];
     content += '<div class="qblock"><strong>' + (i+1) + '. ' + (q.text||'[No question text]') + '</strong> <span style="font-size:0.82em;color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span>';
+    if (q.tableHtml) content += '<div style="overflow-x:auto;margin:8px 0;">' + q.tableHtml + '</div>';
     if (q.image) content += '<img class="qimg" src="' + q.image + '">';
     if (q.type === 'mcq') {
       for (var j=0; j<q.options.length; j++) {
@@ -2714,6 +2953,7 @@ function buildPrintWindow(isTeacher) {
         content += '<div class="option' + (isCorrect?' correct-opt':'') + '">';
         content += '<strong>' + opt.label + '.</strong> ' + (opt.text||'[empty]') + (isCorrect?' &#10003; CORRECT':'');
         if (opt.image) content += '<img class="oimg" src="' + opt.image + '">';
+        if (opt.tableHtml) content += '<div style="overflow-x:auto;margin-top:4px;">' + opt.tableHtml + '</div>';
         content += '</div>';
       }
     }
@@ -2882,6 +3122,10 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   css += '.qmarks{font-size:0.76rem;color:#8899cc;}\n';
   css += '.qtext{font-size:0.93rem;font-weight:600;line-height:1.55;margin-bottom:10px;}\n';
   css += '.qimg{max-width:100%;max-height:300px;display:block;margin:8px auto;border-radius:8px;border:2px solid rgba(201,162,39,0.3);cursor:pointer;}\n';
+  css += '.q-inserted-table,.q-tbl-dark{width:100%;border-collapse:collapse;margin:8px 0;font-size:0.85rem;color:#d4e0ff;}\n';
+  css += '.q-inserted-table th,.q-tbl-dark th{background:rgba(201,162,39,0.12);color:#c9a227;font-weight:700;border:1.5px solid rgba(201,162,39,0.35);padding:6px 10px;text-align:center;}\n';
+  css += '.q-inserted-table td,.q-tbl-dark td{border:1.5px solid rgba(201,162,39,0.25);padding:6px 10px;text-align:center;vertical-align:middle;}\n';
+  css += '.q-inserted-table tbody tr:nth-child(even),.q-tbl-dark tbody tr:nth-child(even){background:rgba(255,255,255,0.04);}\n';
   css += '.opt{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid rgba(201,162,39,0.18);border-radius:9px;margin-bottom:7px;cursor:pointer;transition:all 0.2s;background:rgba(8,18,54,0.4);user-select:none;}\n';
   css += '.opt:hover{border-color:var(--gold);background:rgba(201,162,39,0.1);}\n';
   css += '.opt.sel{border-color:var(--gold);background:rgba(201,162,39,0.18);}\n';
@@ -3040,17 +3284,21 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  h += "<span class=\\"qtype\\">" + typeName + "</span>";\n';
   sc += '  h += "<span class=\\"qmarks\\">" + q.marks + " mark" + (q.marks !== 1 ? "s" : "") + "</span></div>";\n';
   sc += '  h += "<div class=\\"qtext\\">" + escH(q.text || "[No question text]") + "</div>";\n';
+  sc += '  if (q.tableHtml) {\n';
+  sc += '    h += "<div style=\\"overflow-x:auto;margin:8px 0;\\">" + (q.tableHtml||"") + "</div>";\n';
+  sc += '  }\n';
   sc += '  if (q.image) {\n';
   sc += '    h += "<img class=\\"qimg\\" src=\\"" + q.image + "\\" data-enlarge=\\"" + q.image + "\\" alt=\\"diagram\\">";\n';
   sc += '  }\n';
   sc += '  if (q.type === "mcq") {\n';
   sc += '    var opts = q.options || [];\n';
   sc += '    for (var j = 0; j < opts.length; j++) {\n';
-  sc += '      if (!opts[j].text && !opts[j].image) continue;\n';
+  sc += '      if (!opts[j].text && !opts[j].image && !opts[j].tableHtml) continue;\n';
   sc += '      h += "<div class=\\"opt\\" data-qid=\\"" + q.id + "\\" data-oi=\\"" + j + "\\" id=\\"o-" + q.id + "-" + j + "\\">";\n';
   sc += '      h += "<div class=\\"olbl\\">" + opts[j].label + "</div>";\n';
   sc += '      h += "<div>" + escH(opts[j].text || "") + "";\n';
   sc += '      if (opts[j].image) h += "<img class=\\"oimg\\" src=\\"" + opts[j].image + "\\" data-enlarge=\\"" + opts[j].image + "\\" alt=\\"option\\">";\n';
+  sc += '      if (opts[j].tableHtml) h += "<div style=\\"overflow-x:auto;margin-top:4px;\\">" + (opts[j].tableHtml||"") + "</div>";\n';
   sc += '      h += "</div></div>";\n';
   sc += '    }\n';
   sc += '  } else {\n';
@@ -4168,15 +4416,17 @@ function renderGeneratedQuestions() {
     html += '<button class="btn btn-gold btn-xs" style="margin-left:auto;" data-gen-add="' + i + '">&#43; Add to Exam</button>';
     html += '</div>';
     html += '<div style="font-size:0.9rem;font-weight:600;margin-bottom:8px;line-height:1.5;">' + escHtml(q.text) + '</div>';
+    if (q.tableHtml) html += '<div style="overflow-x:auto;margin-bottom:8px;">' + q.tableHtml.replace(/class="q-inserted-table"/g,'class="q-tbl-dark"') + '</div>';
     if (q.type === 'mcq' && q.options) {
       for (var j = 0; j < q.options.length; j++) {
         var opt = q.options[j];
-        if (!opt.text) continue;
+        if (!opt.text && !opt.tableHtml) continue;
         var isCor = (q.correct === opt.label);
         html += '<div style="padding:5px 10px;margin:3px 0;border-radius:6px;font-size:0.84rem;';
         html += 'background:' + (isCor ? 'rgba(46,204,113,0.12)' : 'rgba(0,0,0,0.25)') + ';';
         html += 'border:1px solid ' + (isCor ? '#2ecc71' : 'rgba(201,162,39,0.12)') + ';">';
         html += '<strong>' + opt.label + '.</strong> ' + escHtml(opt.text);
+        if (opt.tableHtml) html += '<div style="overflow-x:auto;margin-top:4px;">' + opt.tableHtml.replace(/class="q-inserted-table"/g,'class="q-tbl-dark"') + '</div>';
         if (isCor) html += ' <span style="color:#2ecc71;font-weight:700;margin-left:6px;">&#10003; Correct</span>';
         html += '</div>';
       }
@@ -4848,6 +5098,13 @@ function teBuildQ(q, idx) {
   h += '</div>';
   h += '<div style="font-size:0.93rem;font-weight:600;line-height:1.55;margin-bottom:10px;">' + escHtml(q.text || '') + '</div>';
 
+  // ── Render inserted table (dark mode) ──────────────────────────
+  if (q.tableHtml) {
+    h += '<div style="overflow-x:auto;margin-bottom:10px;">' +
+         q.tableHtml.replace(/class="q-inserted-table"/g, 'class="q-tbl-dark"') +
+         '</div>';
+  }
+
   if (q.image) {
     h += '<div style="text-align:center;margin-bottom:10px;">';
     h += '<img src="' + q.image + '" data-te-enlarge="' + q.image + '" style="max-width:100%;max-height:300px;border-radius:8px;border:2px solid rgba(201,162,39,0.3);cursor:pointer;" alt="diagram">';
@@ -4857,12 +5114,17 @@ function teBuildQ(q, idx) {
   if (q.type === 'mcq') {
     var opts = q.options || [];
     for (var j = 0; j < opts.length; j++) {
-      if (!opts[j].text && !opts[j].image) continue;
+      if (!opts[j].text && !opts[j].image && !opts[j].tableHtml) continue;
       h += '<div class="mcq-option" id="te-opt-' + q.id + '-' + j + '" data-te-qid="' + q.id + '" data-te-oi="' + j + '" style="cursor:pointer;">';
       h += '<div class="option-label">' + opts[j].label + '</div>';
       h += '<div style="flex:1;">' + escHtml(opts[j].text || '');
       if (opts[j].image) {
         h += '<br><img src="' + opts[j].image + '" data-te-enlarge="' + opts[j].image + '" style="max-width:180px;max-height:140px;border-radius:5px;margin-top:5px;cursor:pointer;" alt="option">';
+      }
+      if (opts[j].tableHtml) {
+        h += '<div style="overflow-x:auto;margin-top:6px;">' +
+             opts[j].tableHtml.replace(/class="q-inserted-table"/g, 'class="q-tbl-dark"') +
+             '</div>';
       }
       h += '</div>';
       h += '</div>';
@@ -5299,18 +5561,20 @@ function teBuildReview() {
     var bdr    = isMCQ ? (isRight ? '#2ecc71' : '#e74c3c') : 'rgba(201,162,39,0.3)';
     h += '<div style="background:rgba(8,18,54,0.6);border:1px solid ' + bdr + ';border-radius:9px;padding:13px;margin-bottom:9px;">';
     h += '<div style="font-weight:600;font-size:0.88rem;margin-bottom:7px;line-height:1.5;">' + (i+1) + '. ' + escHtml(q.text || '') + '</div>';
+    if (q.tableHtml) h += '<div style="overflow-x:auto;margin-bottom:7px;">' + q.tableHtml.replace(/class="q-inserted-table"/g,'class="q-tbl-dark"') + '</div>';
     if (q.image) h += '<img src="' + q.image + '" style="max-width:100%;max-height:200px;border-radius:6px;margin-bottom:7px;display:block;">';
 
     if (isMCQ) {
       var opts = q.options || [];
       for (var j = 0; j < opts.length; j++) {
-        if (!opts[j].text && !opts[j].image) continue;
+        if (!opts[j].text && !opts[j].image && !opts[j].tableHtml) continue;
         var isCor = opts[j].label === q.correct;
         var isAns = opts[j].label === ans[q.id];
         var bg    = isCor ? 'rgba(46,204,113,0.12)' : (isAns && !isCor ? 'rgba(231,76,60,0.12)' : 'rgba(0,0,0,0.2)');
         var bd    = isCor ? '#2ecc71' : (isAns && !isCor ? '#e74c3c' : 'rgba(201,162,39,0.1)');
         h += '<div style="padding:5px 10px;margin:3px 0;border-radius:6px;font-size:0.83rem;background:' + bg + ';border:1px solid ' + bd + ';">';
         h += '<strong>' + opts[j].label + '.</strong> ' + escHtml(opts[j].text || '');
+        if (opts[j].tableHtml) h += '<div style="overflow-x:auto;margin-top:4px;">' + opts[j].tableHtml.replace(/class="q-inserted-table"/g,'class="q-tbl-dark"') + '</div>';
         if (isCor) h += ' <span style="color:#2ecc71;font-weight:700;">\u2713 Correct</span>';
         if (isAns && !isCor) h += ' <span style="color:#e74c3c;font-weight:700;">\u2717 Your answer</span>';
         h += '</div>';
@@ -7115,6 +7379,18 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
 
   function showExam() {
     document.body.innerHTML = '';
+
+    // Inject table styles — needed because the login gate injects a * {margin:0;padding:0}
+    // reset that collapses all table cell borders and padding. These rules override that.
+    var tblStyle = document.createElement('style');
+    tblStyle.textContent =
+      '.q-inserted-table,.q-tbl-dark{width:100%;border-collapse:collapse!important;margin:8px 0!important;font-size:.85rem;color:#d4e0ff;}' +
+      '.q-inserted-table th,.q-tbl-dark th{background:rgba(201,162,39,.12)!important;color:#c9a227!important;font-weight:700;border:1.5px solid rgba(201,162,39,.35)!important;padding:6px 10px!important;text-align:center!important;}' +
+      '.q-inserted-table td,.q-tbl-dark td{border:1.5px solid rgba(201,162,39,.25)!important;padding:6px 10px!important;text-align:center!important;vertical-align:middle!important;}' +
+      '.q-inserted-table tbody tr:nth-child(even),.q-tbl-dark tbody tr:nth-child(even){background:rgba(255,255,255,.04)!important;}' +
+      'table.q-inserted-table,table.q-tbl-dark{display:table!important;border-spacing:0!important;}';
+    document.head.appendChild(tblStyle);
+
     var d = document.createElement('div');
     d.id = 'online-exam-wrap';
 
@@ -7131,15 +7407,17 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
       qhtml += '<span style="background:rgba(201,162,39,.12);color:#c9a227;padding:2px 9px;border-radius:20px;font-size:.73rem;font-weight:700;border:1px solid rgba(201,162,39,.3);">'+tn+'</span>';
       qhtml += '<span style="font-size:.76rem;color:#8899cc;">'+q.marks+' mark'+(q.marks!==1?'s':'')+'</span></div>';
       qhtml += '<div style="font-size:.93rem;font-weight:600;line-height:1.55;margin-bottom:10px;">'+h(q.text||'')+'</div>';
+      if(q.tableHtml) qhtml += '<div style="overflow-x:auto;margin-bottom:8px;">'+q.tableHtml+'</div>';
       if(q.image) qhtml += '<img src="'+q.image+'" style="max-width:100%;max-height:300px;border-radius:8px;border:2px solid rgba(201,162,39,.3);display:block;margin:8px auto;">';
       if(q.type==='mcq'){
         var opts=q.options||[];
         for(var oi=0;oi<opts.length;oi++){
-          if(!opts[oi].text&&!opts[oi].image)continue;
+          if(!opts[oi].text&&!opts[oi].image&&!opts[oi].tableHtml)continue;
           qhtml+='<div id="onopt-'+q.id+'-'+oi+'" data-qid="'+q.id+'" data-oi="'+oi+'" style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid rgba(201,162,39,.18);border-radius:9px;margin-bottom:7px;cursor:pointer;transition:all .2s;background:rgba(8,18,54,.4);">';
           qhtml+='<div style="width:26px;height:26px;border-radius:5px;background:#c9a227;color:#0d1b4b;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.84rem;">'+opts[oi].label+'</div>';
-          qhtml+='<div>'+h(opts[oi].text||'');
+          qhtml+='<div style="flex:1;">'+h(opts[oi].text||'');
           if(opts[oi].image)qhtml+='<br><img src="'+opts[oi].image+'" style="max-width:180px;max-height:140px;border-radius:5px;margin-top:5px;">';
+          if(opts[oi].tableHtml)qhtml+='<div style="overflow-x:auto;margin-top:4px;">'+opts[oi].tableHtml+'</div>';
           qhtml+='</div></div>';
         }
       } else {
