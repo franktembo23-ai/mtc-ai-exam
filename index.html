@@ -5651,14 +5651,83 @@ function teGetRecords() {
 }
 
 function teSaveRecord(rec) {
+  // Save to local device first (instant, works offline)
   var records = teGetRecords();
   records.push(rec);
   try { localStorage.setItem(PERF_KEY, JSON.stringify(records)); } catch(e) { showToast('Storage full — cannot save record'); }
+
+  // Push to Firebase so admin Performance Records panel reflects ALL student results
+  // across every device, not just the device the admin is sitting at.
+  // Uses mtc_perf_records/{timestamp} — admin-readable, student write-only.
+  try {
+    if (cloudDB) {
+      var fbRec = {
+        id:         rec.id         || Date.now(),
+        examTitle:  rec.examTitle  || '',
+        subject:    rec.subject    || '',
+        grade_lvl:  rec.grade_lvl  || '',
+        term:       rec.term       || '',
+        year:       rec.year       || '',
+        student:    rec.student    || '',
+        studentNum: rec.studentNum || '',
+        score:      rec.score      || 0,
+        maxScore:   rec.maxScore   || 0,
+        mcqScore:   rec.mcqScore   || 0,
+        mcqMax:     rec.mcqMax     || 0,
+        autoScore:  rec.autoScore  || 0,
+        autoMax:    rec.autoMax    || 0,
+        pct:        rec.pct        || 0,
+        grade:      rec.grade      || '',
+        mcqRight:   rec.mcqRight   || 0,
+        mcqTotal:   rec.mcqTotal   || 0,
+        attempt:    rec.attempt    || 1,
+        time:       rec.time       || new Date().toLocaleString(),
+        source:     'take_exam'
+      };
+      cloudDB.ref('mtc_perf_records/' + fbRec.id).set(fbRec)
+        .then(function() { /* silent success */ })
+        .catch(function() { /* offline — local copy is the fallback */ });
+    }
+  } catch(e) { /* Firebase unavailable — local copy still saved */ }
+}
+
+// ── Performance Records — merged from local localStorage + Firebase ───────────
+// Local records: exams taken on THIS device (admin or student testing).
+// Firebase records: exams taken by students on THEIR devices (any phone/tablet).
+// Both sources are merged, deduped by record id, and sorted newest-first.
+
+var _perfFBRecords = [];      // cached Firebase records
+var _perfFBListener = false;  // true once Firebase listener is attached
+
+function teAttachPerfListener() {
+  if (_perfFBListener || !cloudDB) return;
+  _perfFBListener = true;
+  cloudDB.ref('mtc_perf_records').on('value', function(snap) {
+    var data = snap.val() || {};
+    _perfFBRecords = Object.values(data);
+    renderPerfRecords();
+  });
+}
+
+function teMergedRecords() {
+  var local = teGetRecords();
+  // Build id set from local records to dedupe against Firebase
+  var localIds = {};
+  for (var i = 0; i < local.length; i++) localIds[String(local[i].id)] = true;
+  var merged = local.slice();
+  for (var j = 0; j < _perfFBRecords.length; j++) {
+    if (!localIds[String(_perfFBRecords[j].id)]) merged.push(_perfFBRecords[j]);
+  }
+  return merged;
 }
 
 function renderPerfRecords() {
-  if (mtcCurrentRole === 'student') return; // Privacy: Performance Records are admin-only
-  var records    = teGetRecords();
+  if (mtcCurrentRole === 'student') return;
+
+  // Attach Firebase listener on first admin view
+  teAttachPerfListener();
+
+  var records    = teMergedRecords();
   var subjFilter = (document.getElementById('perf-subj-filter') || {}).value || '';
   var search     = ((document.getElementById('perf-search') || {}).value || '').toLowerCase();
 
@@ -5676,8 +5745,7 @@ function renderPerfRecords() {
   var sumEl = document.getElementById('perf-summary');
   if (sumEl) {
     var total = filtered.length;
-    var dist  = 0, merit = 0, credit = 0, pass = 0, fail = 0;
-    var scoreSum = 0;
+    var dist  = 0, merit = 0, credit = 0, pass = 0, fail = 0, scoreSum = 0;
     for (var i = 0; i < filtered.length; i++) {
       if (filtered[i].grade === 'DISTINCTION') dist++;
       else if (filtered[i].grade === 'MERIT')  merit++;
@@ -5693,21 +5761,21 @@ function renderPerfRecords() {
       '<span class="grade-pill grade-c">\u2728 Credit: ' + credit + '</span>' +
       '<span class="grade-pill grade-p">\u2705 Pass: ' + pass + '</span>' +
       '<span class="grade-pill grade-f">\u274C Fail: ' + fail + '</span>' +
-      '<span style="background:rgba(201,162,39,0.15);color:var(--gold);padding:4px 12px;border-radius:20px;font-size:0.78rem;font-weight:700;border:1px solid rgba(201,162,39,0.3);">Avg: ' + avg + '% | Total: ' + total + '</span>';
+      '<span style="background:rgba(201,162,39,0.15);color:var(--gold);padding:4px 12px;border-radius:20px;font-size:0.78rem;font-weight:700;border:1px solid rgba(201,162,39,0.3);">Avg: ' + avg + '% | Total: ' + total + '</span>' +
+      (cloudDB ? '<span style="font-size:0.76rem;color:#81c784;padding:4px 10px;">\uD83C\uDF10 Live — syncing from all student devices</span>' :
+                 '<span style="font-size:0.76rem;color:#ffb74d;padding:4px 10px;">&#9888; Not connected to cloud — showing this device only</span>');
   }
 
   var wrap = document.getElementById('perf-table-wrap');
   if (!wrap) return;
 
   if (filtered.length === 0) {
-    wrap.innerHTML = '<div style="text-align:center;color:#5566a0;padding:24px;font-size:0.88rem;">No records found' + (subjFilter || search ? ' for this filter.' : '. Take an exam to begin.') + '</div>';
+    wrap.innerHTML = '<div style="text-align:center;color:#5566a0;padding:24px;font-size:0.88rem;">No records found' + (subjFilter || search ? ' for this filter.' : '. Students will appear here automatically when they take exams on their devices.') + '</div>';
     return;
   }
 
-  // Table (newest first)
   var html = '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
-  html += '<thead>';
-  html += '<tr style="background:rgba(201,162,39,0.15);color:var(--gold);">';
+  html += '<thead><tr style="background:rgba(201,162,39,0.15);color:var(--gold);">';
   html += '<th style="padding:8px 10px;text-align:left;border-bottom:1px solid rgba(201,162,39,0.3);">#</th>';
   html += '<th style="padding:8px 10px;text-align:left;border-bottom:1px solid rgba(201,162,39,0.3);">Student</th>';
   html += '<th style="padding:8px 10px;text-align:left;border-bottom:1px solid rgba(201,162,39,0.3);">Exam</th>';
@@ -5719,13 +5787,14 @@ function renderPerfRecords() {
   html += '<th style="padding:8px 10px;text-align:center;border-bottom:1px solid rgba(201,162,39,0.3);">Del</th>';
   html += '</tr></thead><tbody>';
 
-  var sorted = filtered.slice().reverse(); // newest first
+  var sorted = filtered.slice().reverse();
   for (var ri = 0; ri < sorted.length; ri++) {
     var r   = sorted[ri];
     var gc  = teGradeColor(r.grade);
     var bg  = ri % 2 === 0 ? 'rgba(8,18,54,0.3)' : 'rgba(14,24,70,0.4)';
+    var isFB = r.source === 'take_exam' && _perfFBRecords.some(function(fr){ return String(fr.id)===String(r.id); });
     html += '<tr style="background:' + bg + ';">';
-    html += '<td style="padding:7px 10px;color:#8899cc;">' + (ri+1) + '</td>';
+    html += '<td style="padding:7px 10px;color:#8899cc;">' + (ri+1) + (isFB ? ' <span title="Synced from student device" style="color:#81c784;font-size:0.7rem;">\uD83C\uDF10</span>' : '') + '</td>';
     html += '<td style="padding:7px 10px;font-weight:600;">' + escHtml(r.student || '') + '<br><span style="color:#8899cc;font-weight:400;">' + escHtml(r.studentNum || '') + '</span></td>';
     html += '<td style="padding:7px 10px;max-width:180px;">' + escHtml(r.examTitle || '') + '</td>';
     html += '<td style="padding:7px 10px;color:#aab4d4;">' + escHtml(r.subject || '') + (r.grade_lvl ? '<br><span style="font-size:0.76rem;">' + escHtml(r.grade_lvl) + '</span>' : '') + '</td>';
@@ -5739,31 +5808,37 @@ function renderPerfRecords() {
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
-  // Delete delegation
   wrap.onclick = function(ev) {
     var btn = ev.target;
     if (btn.tagName !== 'BUTTON') return;
     var del = btn.getAttribute('data-perf-del');
-    if (del) teDeleteRecord(parseInt(del));
+    if (del) teDeleteRecord(del);
   };
 }
 
 function teDeleteRecord(id) {
+  // Remove from local
   var records = teGetRecords();
   var updated = [];
   for (var i = 0; i < records.length; i++) {
-    if (records[i].id !== id) updated.push(records[i]);
+    if (String(records[i].id) !== String(id)) updated.push(records[i]);
   }
   try { localStorage.setItem(PERF_KEY, JSON.stringify(updated)); } catch(e) {}
+  // Remove from Firebase
+  try { if (cloudDB) cloudDB.ref('mtc_perf_records/' + id).remove(); } catch(e) {}
+  // Remove from local FB cache
+  _perfFBRecords = _perfFBRecords.filter(function(r){ return String(r.id) !== String(id); });
   renderPerfRecords();
   showToast('Record deleted');
 }
 
 function clearPerfRecords() {
-  var records = teGetRecords();
+  var records = teMergedRecords();
   if (records.length === 0) { showToast('No records to clear'); return; }
-  openModal('Clear Performance Records', '<p style="color:#d4e0ff;">Delete ALL ' + records.length + ' performance record(s)? This cannot be undone.</p>', function() {
+  openModal('Clear Performance Records', '<p style="color:#d4e0ff;">Delete ALL ' + records.length + ' performance record(s) from this device and the cloud? This cannot be undone.</p>', function() {
     try { localStorage.removeItem(PERF_KEY); } catch(e) {}
+    try { if (cloudDB) cloudDB.ref('mtc_perf_records').remove(); } catch(e) {}
+    _perfFBRecords = [];
     closeModal(); renderPerfRecords();
     showToast('All records cleared');
   }, 'Clear All');
