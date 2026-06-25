@@ -452,6 +452,17 @@ select option { background: #ffffff; color: #1a2744; }
   color:#c9a227; font-size:0.75rem; padding:3px 8px; border-radius:5px; cursor:pointer;
   font-weight:600; margin-left:6px; }
 .tbl-insert-btn:hover { background:rgba(201,162,39,0.25); }
+/* ── Sub-Part (a)(b)(c) styles ───────────────────────────────── */
+.subpart-editor{background:rgba(201,162,39,0.06);border:1px solid rgba(201,162,39,0.2);border-radius:8px;padding:10px 12px;margin-bottom:8px;}
+.subpart-row{display:flex;align-items:center;gap:7px;margin-bottom:5px;}
+.subpart-row input[type=text]{flex:1;}
+.subpart-row input[type=number]{width:64px;flex-shrink:0;}
+.te-subpart{margin-bottom:14px;padding:10px 12px;background:rgba(201,162,39,0.04);border-left:3px solid rgba(201,162,39,0.4);border-radius:0 7px 7px 0;}
+.te-subpart-label{font-size:0.88rem;font-weight:600;color:#d4e0ff;margin-bottom:6px;}
+.te-subpart-lbl{display:inline-block;min-width:22px;height:22px;line-height:22px;text-align:center;background:#c9a227;color:#0d1b4b;font-weight:800;border-radius:4px;font-size:0.8rem;margin-right:6px;}
+.te-subpart textarea{width:100%;padding:8px 10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:7px;color:#fff;font-size:0.88rem;resize:vertical;font-family:inherit;outline:none;}
+.prev-subpart{margin:5px 0 5px 14px;display:flex;align-items:baseline;gap:6px;font-size:0.87rem;}
+.prev-subpart-lbl{font-weight:700;color:#1a2744;min-width:20px;flex-shrink:0;}
 #tab-takeexam input[type=text] {
   background: #ffffff;
   color: #1a2744;
@@ -1916,20 +1927,47 @@ function buildQuestionHTML(q, idx) {
 
   // Short Answer
   if (q.type === 'short') {
-    html += '<div style="margin-bottom:6px;">';
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
-    html += '<label style="margin:0;">Model Answer (for teacher copy)</label>';
-    html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;answer&quot;,null)">&#129518; Math</button>';
-    html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;answer&quot;,' + qid + ',null)">&#9783; Table</button>';
+    // ── Sub-Parts Editor (a)(b)(c)... ─────────────────────────
+    var sps = q.subParts || [];
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">';
+    html += '<label style="margin:0;font-weight:700;">Sub-Parts <span style="font-weight:400;font-size:0.78rem;color:#8899cc;">(a)(b)(c)... — leave empty for single answer</span></label>';
+    html += '<button type="button" class="btn btn-navy btn-xs" onclick="addSubPart(' + qid + ')">&#43; Add Part</button>';
     html += '</div>';
-    html += '<textarea id="qanswer-' + qid + '" placeholder="Enter the expected answer... (Ctrl+V to paste image into question)" oninput="updateQField(' + qid + ',&quot;answer&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.answer||'') + '</textarea>';
-    if (q.answerTableHtml) {
-      html += '<div class="q-tbl-wrap" id="q-ans-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
-      html += q.answerTableHtml;
-      html += '<div style="display:flex;gap:6px;margin-top:4px;">';
-      html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;answer&quot;,' + qid + ',null)">&#9783; Edit</button>';
-      html += '<button class="btn btn-danger btn-xs" onclick="removeAnswerTable(' + qid + ')">&#128465;</button>';
-      html += '</div></div>';
+    if (sps.length > 0) {
+      for (var si = 0; si < sps.length; si++) {
+        var sp = sps[si];
+        html += '<div class="subpart-editor" id="sp-editor-' + qid + '-' + si + '">';
+        html += '<div class="subpart-row">';
+        html += '<span style="min-width:22px;height:22px;line-height:22px;text-align:center;background:var(--gold);color:var(--navy-dark);font-weight:800;border-radius:4px;font-size:0.8rem;display:inline-block;flex-shrink:0;">(' + sp.label + ')</span>';
+        html += '<input type="text" placeholder="Sub-question text e.g. Mechanical Advantage." value="' + escHtml(sp.text||'') + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;text&quot;,this.value)" style="flex:1;">';
+        html += '<input type="number" min="1" max="20" value="' + (sp.marks||1) + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;marks&quot;,this.value)" title="Marks for this part" style="width:64px;">';
+        html += '<button class="btn btn-danger btn-xs" onclick="removeSubPart(' + qid + ',' + si + ')">&#128465;</button>';
+        html += '</div>';
+        html += '<input type="text" placeholder="Answer key for (' + sp.label + ')  e.g.  MA = Load/Effort = 480/200 = 2.4" value="' + escHtml(sp.answer||'') + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;answer&quot;,this.value)" style="width:100%;margin-top:2px;">';
+        html += '</div>';
+      }
+      // Total marks auto-sum display
+      var spTotal = 0; for (var sm=0;sm<sps.length;sm++) spTotal += (parseInt(sps[sm].marks)||1);
+      html += '<div style="font-size:0.78rem;color:#81c784;padding:3px 0;">Sub-parts total: <strong>' + spTotal + ' marks</strong> (question marks field is ignored when sub-parts are used)</div>';
+    } else {
+      // No sub-parts: show single answer field as before
+      html += '<div>';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
+      html += '<label style="margin:0;">Model Answer (for teacher copy)</label>';
+      html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;answer&quot;,null)">&#129518; Math</button>';
+      html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;answer&quot;,' + qid + ',null)">&#9783; Table</button>';
+      html += '</div>';
+      html += '<textarea id="qanswer-' + qid + '" placeholder="Enter the expected answer..." oninput="updateQField(' + qid + ',&quot;answer&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.answer||'') + '</textarea>';
+      if (q.answerTableHtml) {
+        html += '<div class="q-tbl-wrap" id="q-ans-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
+        html += q.answerTableHtml;
+        html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+        html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;answer&quot;,' + qid + ',null)">&#9783; Edit</button>';
+        html += '<button class="btn btn-danger btn-xs" onclick="removeAnswerTable(' + qid + ')">&#128465;</button>';
+        html += '</div></div>';
+      }
+      html += '</div>';
     }
     html += '</div>';
   }
@@ -2145,6 +2183,52 @@ function removeGuidanceTable(qid) {
     if (examState.questions[i].id===qid) { examState.questions[i].guidanceTableHtml=null; break; }
   }
   renderQuestions();
+}
+
+// ── Sub-Part (a)(b)(c) management ────────────────────────────────────────────
+var SP_LABELS = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p'];
+
+function addSubPart(qid) {
+  for (var i = 0; i < examState.questions.length; i++) {
+    var q = examState.questions[i];
+    if (q.id !== qid) continue;
+    if (!q.subParts) q.subParts = [];
+    var nextLabel = SP_LABELS[q.subParts.length] || String(q.subParts.length + 1);
+    q.subParts.push({ label: nextLabel, text: '', answer: '', marks: 1 });
+    break;
+  }
+  renderQuestions();
+}
+
+function removeSubPart(qid, spIdx) {
+  for (var i = 0; i < examState.questions.length; i++) {
+    var q = examState.questions[i];
+    if (q.id !== qid) continue;
+    if (!q.subParts) break;
+    q.subParts.splice(spIdx, 1);
+    // Relabel remaining parts
+    for (var j = 0; j < q.subParts.length; j++) q.subParts[j].label = SP_LABELS[j] || String(j+1);
+    break;
+  }
+  renderQuestions();
+}
+
+function updateSubPart(qid, spIdx, field, value) {
+  for (var i = 0; i < examState.questions.length; i++) {
+    var q = examState.questions[i];
+    if (q.id !== qid) continue;
+    if (!q.subParts || !q.subParts[spIdx]) break;
+    q.subParts[spIdx][field] = (field === 'marks') ? (parseInt(value)||1) : value;
+    // Update parent marks to reflect sub-part total (live)
+    if (field === 'marks') {
+      var total = 0;
+      for (var j = 0; j < q.subParts.length; j++) total += (parseInt(q.subParts[j].marks)||1);
+      q.marks = total;
+    }
+    break;
+  }
+  // Don't re-render on every keystroke — just update the question header display
+  updateHeaderDisplay();
 }
 
 function updateOptionText(qid, optIdx, value) {
@@ -2885,8 +2969,20 @@ function generatePreview() {
       }
     }
     if (q.type === 'short') {
-      html += '<div style="margin-top:6px; border-bottom:1px solid #aaa; height:28px;"></div>';
-      html += '<div style="border-bottom:1px solid #aaa; height:28px; margin-top:4px;"></div>';
+      if (q.subParts && q.subParts.length > 0) {
+        for (var si=0; si<q.subParts.length; si++) {
+          var psp = q.subParts[si];
+          html += '<div style="margin:6px 0 4px 10px;display:flex;align-items:baseline;gap:8px;font-size:0.88rem;">';
+          html += '<span style="font-weight:700;min-width:22px;">(' + psp.label + ')</span>';
+          html += '<span>' + escHtml(psp.text||'') + '</span>';
+          html += '<span style="font-size:0.76rem;color:#777;">(' + (psp.marks||1) + ' mark' + ((psp.marks||1)!==1?'s':'') + ')</span>';
+          html += '</div>';
+          html += '<div style="border-bottom:1px solid #aaa;height:24px;margin:0 0 4px 32px;"></div>';
+        }
+      } else {
+        html += '<div style="margin-top:6px; border-bottom:1px solid #aaa; height:28px;"></div>';
+        html += '<div style="border-bottom:1px solid #aaa; height:28px; margin-top:4px;"></div>';
+      }
     }
     if (q.type === 'essay') {
       for (var k=0; k<6; k++) html += '<div style="border-bottom:1px solid #bbb; height:26px; margin-top:4px;"></div>';
@@ -3300,6 +3396,15 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '      if (opts[j].image) h += "<img class=\\"oimg\\" src=\\"" + opts[j].image + "\\" data-enlarge=\\"" + opts[j].image + "\\" alt=\\"option\\">";\n';
   sc += '      if (opts[j].tableHtml) h += "<div style=\\"overflow-x:auto;margin-top:4px;\\">" + (opts[j].tableHtml||"") + "</div>";\n';
   sc += '      h += "</div></div>";\n';
+  sc += '    }\n';
+  sc += '  } else if ((q.type === "short" || q.type === "essay") && q.subParts && q.subParts.length > 0) {\n';
+  sc += '    var sps = q.subParts;\n';
+  sc += '    for (var si = 0; si < sps.length; si++) {\n';
+  sc += '      var sp = sps[si];\n';
+  sc += '      h += "<div style=\\"margin-bottom:12px;padding:8px 10px;border-left:3px solid rgba(201,162,39,0.5);border-radius:0 7px 7px 0;\\">";\n';
+  sc += '      h += "<div style=\\"font-size:0.88rem;font-weight:600;margin-bottom:5px;\\"><span style=\\"display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:#c9a227;color:#0d1b4b;border-radius:3px;font-size:0.78rem;margin-right:6px;\\">(" + sp.label + ")</span>" + escH(sp.text || "") + " <span style=\\"color:#8899cc;font-size:0.76rem;font-weight:400;\\">("+sp.marks+" mark" + ((sp.marks||1)!==1?"s":"") + ")</span></div>";\n';
+  sc += '      h += "<textarea class=\\"sa-in\\" id=\\"sa-" + q.id + "-" + sp.label + "\\" rows=\\"2\\" placeholder=\\"Answer for (" + sp.label + ")...\\"></textarea>";\n';
+  sc += '      h += "</div>";\n';
   sc += '    }\n';
   sc += '  } else {\n';
   sc += '    var rows = q.type === "essay" ? "8" : "3";\n';
@@ -3786,8 +3891,16 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  for (var qi = 0; qi < EXAM_QS.length; qi++) {\n';
   sc += '    var q = EXAM_QS[qi];\n';
   sc += '    if (q.type === "short" || q.type === "essay") {\n';
-  sc += '      var tel = getEl("sa-" + q.id);\n';
-  sc += '      if (tel) answers[q.id] = tel.value;\n';
+  sc += '      if (q.subParts && q.subParts.length > 0) {\n';
+  sc += '        for (var si = 0; si < q.subParts.length; si++) {\n';
+  sc += '          var sp = q.subParts[si];\n';
+  sc += '          var el = getEl("sa-" + q.id + "-" + sp.label);\n';
+  sc += '          if (el) answers[q.id + "_" + sp.label] = el.value;\n';
+  sc += '        }\n';
+  sc += '      } else {\n';
+  sc += '        var tel = getEl("sa-" + q.id);\n';
+  sc += '        if (tel) answers[q.id] = tel.value;\n';
+  sc += '      }\n';
   sc += '    }\n';
   sc += '  }\n';
   sc += '  var mcqScore = 0, mcqMax = 0, mcqRight = 0, mcqTotal = 0;\n';
@@ -3801,24 +3914,44 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  }\n';
   sc += '  retakes++;\n';
   sc += '  aiMarks = {}; aiFeedback = {};\n';
-  sc += '  if (!longQs.length) {\n';
-  sc += '    showFinalResult(mcqScore, mcqMax, mcqRight, mcqTotal, 0, 0); return;\n';
-  sc += '  }\n';
+  sc += '  if (!longQs.length) { showFinalResult(mcqScore, mcqMax, mcqRight, mcqTotal, 0, 0); return; }\n';
   sc += '  showAIMarkingScreen(longQs.length);\n';
   sc += '  var aiScore = 0, aiMax = 0, done = 0;\n';
   sc += '  for (var li = 0; li < longQs.length; li++) {\n';
-  sc += '    (function(q) {\n';
-  sc += '      aiMax += (q.marks || 1);\n';
-  sc += '      aiMarkQuestion(q, answers[q.id] || "", function(result) {\n';
-  sc += '        aiMarks[q.id]    = result.score;\n';
-  sc += '        aiFeedback[q.id] = result.feedback;\n';
-  sc += '        aiScore += result.score;\n';
-  sc += '        done++;\n';
-  sc += '        updateAIProgress(done, longQs.length);\n';
-  sc += '        if (done === longQs.length) {\n';
-  sc += '          showFinalResult(mcqScore, mcqMax, mcqRight, mcqTotal, aiScore, aiMax);\n';
+  sc += '    (function(lq) {\n';
+  sc += '      if (lq.subParts && lq.subParts.length > 0) {\n';
+  sc += '        // Mark each sub-part independently\n';
+  sc += '        var spScore = 0, spMax = 0, spDone = 0;\n';
+  sc += '        aiMarks[lq.id] = {}; aiFeedback[lq.id] = {};\n';
+  sc += '        for (var si2 = 0; si2 < lq.subParts.length; si2++) {\n';
+  sc += '          (function(sp2) {\n';
+  sc += '            spMax += (sp2.marks || 1);\n';
+  sc += '            aiMarkQuestion({id:lq.id+"_"+sp2.label, text:sp2.text, answer:sp2.answer, guidance:sp2.answer, marks:sp2.marks||1},\n';
+  sc += '              answers[lq.id + "_" + sp2.label] || "",\n';
+  sc += '              function(res) {\n';
+  sc += '                aiMarks[lq.id][sp2.label]    = res.score;\n';
+  sc += '                aiFeedback[lq.id][sp2.label] = res.feedback;\n';
+  sc += '                spScore += res.score; spDone++;\n';
+  sc += '                if (spDone === lq.subParts.length) {\n';
+  sc += '                  aiMarks[lq.id]._score = spScore;\n';
+  sc += '                  aiMarks[lq.id]._max   = spMax;\n';
+  sc += '                  aiScore += spScore; aiMax += spMax; done++;\n';
+  sc += '                  updateAIProgress(done, longQs.length);\n';
+  sc += '                  if (done === longQs.length) showFinalResult(mcqScore, mcqMax, mcqRight, mcqTotal, aiScore, aiMax);\n';
+  sc += '                }\n';
+  sc += '              });\n';
+  sc += '          })(lq.subParts[si2]);\n';
   sc += '        }\n';
-  sc += '      });\n';
+  sc += '      } else {\n';
+  sc += '        aiMax += (lq.marks || 1);\n';
+  sc += '        aiMarkQuestion(lq, answers[lq.id] || "", function(result) {\n';
+  sc += '          aiMarks[lq.id]    = result.score;\n';
+  sc += '          aiFeedback[lq.id] = result.feedback;\n';
+  sc += '          aiScore += result.score; done++;\n';
+  sc += '          updateAIProgress(done, longQs.length);\n';
+  sc += '          if (done === longQs.length) showFinalResult(mcqScore, mcqMax, mcqRight, mcqTotal, aiScore, aiMax);\n';
+  sc += '        });\n';
+  sc += '      }\n';
   sc += '    })(longQs[li]);\n';
   sc += '  }\n';
   sc += '}\n\n';
@@ -3883,6 +4016,26 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '        h += "</div>";\n';
   sc += '      }\n';
   sc += '      if (!answers[q.id]) h += "<div style=\\"font-size:0.8rem;color:#e74c3c;margin-top:4px;\\">Not answered</div>";\n';
+  sc += '    } else if (q.subParts && q.subParts.length > 0) {\n';
+  sc += '      var spMkMap = aiMarks[q.id] || {}; var spFbMap = aiFeedback[q.id] || {};\n';
+  sc += '      for (var sri = 0; sri < q.subParts.length; sri++) {\n';
+  sc += '        var rsp = q.subParts[sri];\n';
+  sc += '        var rspAns = answers[q.id + "_" + rsp.label] || "";\n';
+  sc += '        var rspSc  = spMkMap[rsp.label];\n';
+  sc += '        var rspFb  = spFbMap[rsp.label] || "";\n';
+  sc += '        var rspMx  = rsp.marks || 1;\n';
+  sc += '        var rspClr = (rspSc !== undefined) ? (rspSc >= rspMx ? "#2ecc71" : rspSc > 0 ? "#f39c12" : "#e74c3c") : "#8899cc";\n';
+  sc += '        h += "<div style=\\"margin-bottom:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:7px;\\">";\n';
+  sc += '        h += "<div style=\\"font-size:0.84rem;font-weight:600;color:#c9a227;margin-bottom:4px;\\"><span style=\\"display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:#c9a227;color:#0d1b4b;border-radius:3px;font-size:0.75rem;margin-right:6px;\\">("+ rsp.label +")</span>" + escH(rsp.text || "") + "</div>";\n';
+  sc += '        h += "<div style=\\"font-size:0.8rem;color:#8899cc;margin-bottom:3px;\\">Your answer:</div>";\n';
+  sc += '        h += "<div style=\\"background:rgba(0,0,0,0.2);padding:5px 8px;border-radius:5px;font-size:0.83rem;margin-bottom:5px;\\">" + escH(rspAns || "(No answer given)") + "</div>";\n';
+  sc += '        if (rspSc !== undefined) h += "<div style=\\"padding:5px 9px;border-left:3px solid "+rspClr+";background:rgba(201,162,39,0.06);border-radius:0 5px 5px 0;font-size:0.8rem;margin-bottom:4px;\\">\\uD83E\\uDD16 <span style=\\"color:"+rspClr+";font-weight:700;\\">" + rspSc + "/" + rspMx + " marks</span> — " + escH(rspFb) + "</div>";\n';
+  sc += '        if (rsp.answer) h += "<div style=\\"padding:5px 9px;border-left:3px solid #2ecc71;background:rgba(46,204,113,0.06);border-radius:0 5px 5px 0;font-size:0.8rem;color:#a0f0c0;\\"><strong>Answer:</strong> " + escH(rsp.answer) + "</div>";\n';
+  sc += '        h += "</div>";\n';
+  sc += '      }\n';
+  sc += '      var spTS = spMkMap._score !== undefined ? spMkMap._score : 0;\n';
+  sc += '      var spTM = spMkMap._max   !== undefined ? spMkMap._max   : 0;\n';
+  sc += '      if (spTM > 0) { var spC2 = spTS >= spTM ? "#2ecc71" : spTS > 0 ? "#f39c12" : "#e74c3c"; h += "<div style=\\"font-size:0.83rem;font-weight:700;color:"+spC2+";padding:4px 0;\\">\\uD83E\\uDD16 Total: "+spTS+"/"+spTM+" marks</div>"; }\n';
   sc += '    } else {\n';
   sc += '      var studentAns = answers[q.id] || "";\n';
   sc += '      var qAISc = aiMarks[q.id]; var qAIFb = aiFeedback[q.id];\n';
@@ -5129,6 +5282,20 @@ function teBuildQ(q, idx) {
       h += '</div>';
       h += '</div>';
     }
+  } else if ((q.type === 'short' || q.type === 'essay') && q.subParts && q.subParts.length > 0) {
+    // ── Sub-parts (a)(b)(c) mode ──────────────────────────────
+    var sps = q.subParts;
+    for (var si = 0; si < sps.length; si++) {
+      var sp = sps[si];
+      h += '<div class="te-subpart">';
+      h += '<div class="te-subpart-label">';
+      h += '<span class="te-subpart-lbl">(' + sp.label + ')</span>';
+      h += escHtml(sp.text || '');
+      h += ' <span style="color:#8899cc;font-size:0.76rem;font-weight:400;">(' + (sp.marks||1) + ' mark' + ((sp.marks||1)!==1?'s':'') + ')</span>';
+      h += '</div>';
+      h += '<textarea id="te-sa-' + q.id + '-' + sp.label + '" rows="2" placeholder="Answer for (' + sp.label + ')..." class="te-subpart-textarea" data-te-spqid="' + q.id + '" data-te-splbl="' + sp.label + '" style="width:100%;padding:8px 10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:7px;color:#fff;font-size:0.88rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
+      h += '</div>';
+    }
   } else {
     var rows = q.type === 'essay' ? '7' : '3';
     h += '<textarea id="te-sa-' + q.id + '" rows="' + rows + '" placeholder="Write your answer here..." style="width:100%;padding:10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:8px;color:#fff;font-size:0.9rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
@@ -5212,16 +5379,25 @@ function teSubmitExam() {
   if (teState.timerInt) clearInterval(teState.timerInt);
   var qs = teState.exam.questions;
 
-  // ── Save textarea answers ────────────────────────────────────
+  // ── Save textarea answers (including sub-parts) ───────────────
   for (var qi = 0; qi < qs.length; qi++) {
     var q = qs[qi];
     if (q.type === 'short' || q.type === 'essay') {
-      var tel = document.getElementById('te-sa-' + q.id);
-      if (tel) teState.answers[q.id] = tel.value;
+      if (q.subParts && q.subParts.length > 0) {
+        // Collect each sub-part answer keyed as qid_label
+        for (var si = 0; si < q.subParts.length; si++) {
+          var sp = q.subParts[si];
+          var spEl = document.getElementById('te-sa-' + q.id + '-' + sp.label);
+          if (spEl) teState.answers[q.id + '_' + sp.label] = spEl.value;
+        }
+      } else {
+        var tel = document.getElementById('te-sa-' + q.id);
+        if (tel) teState.answers[q.id] = tel.value;
+      }
     }
   }
 
-  // ── Score MCQs, collect short/essay questions ────────────────
+  // ── Score MCQs, collect short/essay questions for auto-mark ─────
   var mcqScore = 0, mcqMax = 0, mcqRight = 0, mcqTotal = 0;
   var longQs = [];
   for (var i = 0; i < qs.length; i++) {
@@ -5438,13 +5614,35 @@ function teSubmitExam() {
   var autoScore = 0, autoMax = 0;
   for (var li = 0; li < longQs.length; li++) {
     var lq = longQs[li];
-    var modelAns = lq.answer || lq.guidance || '';
-    var studentAns = teState.answers[lq.id] || '';
-    var markResult = teAutoMark(studentAns, modelAns, lq.marks || 1);
-    teState.autoMarks[lq.id]    = markResult.score;
-    teState.autoFeedback[lq.id] = markResult.feedback;
-    autoScore += markResult.score;
-    autoMax   += (lq.marks || 1);
+    if (lq.subParts && lq.subParts.length > 0) {
+      // ── Sub-part marking: each (a)(b)(c) marked independently ──
+      teState.autoMarks[lq.id]    = {};
+      teState.autoFeedback[lq.id] = {};
+      var qTotal = 0, qScore = 0;
+      for (var si2 = 0; si2 < lq.subParts.length; si2++) {
+        var sp2 = lq.subParts[si2];
+        var spAns = teState.answers[lq.id + '_' + sp2.label] || '';
+        var spMks = sp2.marks || 1;
+        var spResult = teAutoMark(spAns, sp2.answer || '', spMks);
+        teState.autoMarks[lq.id][sp2.label]    = spResult.score;
+        teState.autoFeedback[lq.id][sp2.label] = spResult.feedback;
+        qScore += spResult.score;
+        qTotal += spMks;
+      }
+      autoScore += qScore;
+      autoMax   += qTotal;
+      // Store flat score/max on question level too (for the result slip)
+      teState.autoMarks[lq.id]._score = qScore;
+      teState.autoMarks[lq.id]._max   = qTotal;
+    } else {
+      var modelAns = lq.answer || lq.guidance || '';
+      var studentAns = teState.answers[lq.id] || '';
+      var markResult = teAutoMark(studentAns, modelAns, lq.marks || 1);
+      teState.autoMarks[lq.id]    = markResult.score;
+      teState.autoFeedback[lq.id] = markResult.feedback;
+      autoScore += markResult.score;
+      autoMax   += (lq.marks || 1);
+    }
   }
 
   // ── Combine MCQ + auto-mark scores for final grade ───────────
@@ -5580,6 +5778,36 @@ function teBuildReview() {
         h += '</div>';
       }
       if (!ans[q.id]) h += '<div style="font-size:0.8rem;color:#e74c3c;margin-top:4px;">Not answered</div>';
+    } else if (q.subParts && q.subParts.length > 0) {
+      // ── Sub-parts review ──────────────────────────────────────
+      var spMarks = teState.autoMarks && teState.autoMarks[q.id];
+      var spFb    = teState.autoFeedback && teState.autoFeedback[q.id];
+      var spTotalScore = 0, spTotalMax = 0;
+      for (var sri = 0; sri < q.subParts.length; sri++) {
+        var rsp = q.subParts[sri];
+        var rspAns  = ans[q.id + '_' + rsp.label] || '';
+        var rspSc   = (spMarks && spMarks[rsp.label] !== undefined) ? spMarks[rsp.label] : null;
+        var rspFb   = (spFb   && spFb[rsp.label])   ? spFb[rsp.label]   : '';
+        var rspMax  = rsp.marks || 1;
+        spTotalScore += (rspSc !== null ? rspSc : 0);
+        spTotalMax   += rspMax;
+        var rspColor = rspSc !== null ? (rspSc >= rspMax ? '#2ecc71' : (rspSc > 0 ? '#ffb74d' : '#e74c3c')) : '#8899cc';
+        h += '<div style="margin-bottom:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:7px;">';
+        h += '<div style="font-size:0.84rem;font-weight:600;color:#c9a227;margin-bottom:4px;"><span style="display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:#c9a227;color:#0d1b4b;border-radius:3px;font-size:0.75rem;margin-right:6px;">(' + rsp.label + ')</span>' + escHtml(rsp.text||'') + '</div>';
+        h += '<div style="font-size:0.8rem;color:#8899cc;margin-bottom:3px;">Your answer:</div>';
+        h += '<div style="background:rgba(0,0,0,0.2);padding:5px 8px;border-radius:5px;font-size:0.83rem;">' + escHtml(rspAns || '(No answer given)') + '</div>';
+        if (rspSc !== null) {
+          h += '<div style="margin-top:5px;padding:5px 9px;border-left:3px solid ' + rspColor + ';background:rgba(201,162,39,0.06);border-radius:0 5px 5px 0;font-size:0.8rem;">';
+          h += '\uD83E\uDD16 <span style="color:' + rspColor + ';font-weight:700;">' + rspSc + '/' + rspMax + ' marks</span>';
+          if (rspFb) h += ' — ' + escHtml(rspFb);
+          h += '</div>';
+        }
+        if (rsp.answer) h += '<div style="margin-top:5px;padding:5px 9px;border-left:3px solid #2ecc71;background:rgba(46,204,113,0.06);border-radius:0 5px 5px 0;font-size:0.8rem;color:#a0f0c0;"><strong>Answer:</strong> ' + escHtml(rsp.answer) + '</div>';
+        h += '</div>';
+      }
+      // Sub-parts summary
+      var spSumColor = spTotalScore >= spTotalMax ? '#2ecc71' : (spTotalScore > 0 ? '#ffb74d' : '#e74c3c');
+      h += '<div style="font-size:0.83rem;font-weight:700;color:' + spSumColor + ';padding:4px 0;">\uD83E\uDD16 Total: ' + spTotalScore + '/' + spTotalMax + ' marks</div>';
     } else {
       h += '<div style="font-size:0.82rem;color:#8899cc;margin-bottom:3px;">Your answer:</div>';
       h += '<div style="background:rgba(0,0,0,0.25);padding:7px 10px;border-radius:6px;font-size:0.84rem;">' + escHtml(ans[q.id] || '(No answer given)') + '</div>';
@@ -7495,6 +7723,15 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
           if(opts[oi].tableHtml)qhtml+='<div style="overflow-x:auto;margin-top:4px;">'+opts[oi].tableHtml+'</div>';
           qhtml+='</div></div>';
         }
+      } else if ((q.type==='short'||q.type==='essay') && q.subParts && q.subParts.length>0) {
+        var sps2=q.subParts;
+        for(var spi=0;spi<sps2.length;spi++){
+          var sp2=sps2[spi];
+          qhtml+='<div style="margin-bottom:12px;padding:8px 10px;border-left:3px solid rgba(201,162,39,0.4);border-radius:0 7px 7px 0;">';
+          qhtml+='<div style="font-size:.87rem;font-weight:600;margin-bottom:5px;"><span style="display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:#c9a227;color:#0d1b4b;border-radius:3px;font-size:.76rem;margin-right:6px;">('+sp2.label+')</span>'+h(sp2.text||'')+' <span style="color:#8899cc;font-size:.75rem;font-weight:400;">('+((sp2.marks||1))+' mark'+((sp2.marks||1)!==1?'s':'')+')</span></div>';
+          qhtml+='<textarea id="onsa-'+q.id+'-'+sp2.label+'" rows="2" placeholder="Answer for ('+sp2.label+')..." style="width:100%;padding:8px 10px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.3);border-radius:7px;color:#fff;font-size:.88rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
+          qhtml+='</div>';
+        }
       } else {
         qhtml+='<textarea id="onsa-'+q.id+'" rows="'+(q.type==='essay'?7:3)+'" placeholder="Write your answer here..." style="width:100%;padding:10px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.3);border-radius:8px;color:#fff;font-size:.9rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
       }
@@ -7562,8 +7799,19 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
 
   function submitOnlineExam(){
     if(timerInt2)clearInterval(timerInt2);
-    // Save textarea answers
-    for(var qi=0;qi<qs.length;qi++){var q=qs[qi];if(q.type!=='mcq'){var ta=document.getElementById('onsa-'+q.id);if(ta)studentAnswers[q.id]=ta.value;}}
+    // Save textarea answers (including sub-parts)
+    for(var qi=0;qi<qs.length;qi++){
+      var q=qs[qi];
+      if(q.type!=='mcq'){
+        if(q.subParts&&q.subParts.length>0){
+          for(var spi2=0;spi2<q.subParts.length;spi2++){
+            var sp3=q.subParts[spi2];
+            var spta=document.getElementById('onsa-'+q.id+'-'+sp3.label);
+            if(spta)studentAnswers[q.id+'_'+sp3.label]=spta.value;
+          }
+        }else{var ta=document.getElementById('onsa-'+q.id);if(ta)studentAnswers[q.id]=ta.value;}
+      }
+    }
     var score=0,max=0,right=0,total=0;
     for(var i=0;i<qs.length;i++){var q=qs[i];if(q.type==='mcq'){total++;max+=(q.marks||1);if(studentAnswers[q.id]===q.correct){score+=(q.marks||1);right++;}}}
     var pct=max>0?Math.round((score/max)*100):0;
@@ -7818,13 +8066,30 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
     var oS=0, oM=0, oMk={}, oFb={};
     for (var oqi2=0; oqi2<longQsOnline.length; oqi2++) {
       var oq = longQsOnline[oqi2];
-      var oA = studentAnswers[oq.id] || '';
-      var modelAns = oq.answer || oq.guidance || '';
-      var markResult = amMarkAnswer(oA, modelAns, oq.marks || 1);
-      oMk[oq.id] = markResult.score;
-      oFb[oq.id] = markResult.feedback;
-      oS += markResult.score;
-      oM += (oq.marks || 1);
+      if (oq.subParts && oq.subParts.length > 0) {
+        // Mark each sub-part independently
+        oMk[oq.id] = {}; oFb[oq.id] = {};
+        var oqScore = 0, oqMax = 0;
+        for (var ospi=0; ospi<oq.subParts.length; ospi++) {
+          var osp = oq.subParts[ospi];
+          var ospAns = studentAnswers[oq.id+'_'+osp.label] || '';
+          var ospMks = osp.marks || 1;
+          var ospRes = amMarkAnswer(ospAns, osp.answer || '', ospMks);
+          oMk[oq.id][osp.label] = ospRes.score;
+          oFb[oq.id][osp.label] = ospRes.feedback;
+          oqScore += ospRes.score; oqMax += ospMks;
+        }
+        oMk[oq.id]._score = oqScore; oMk[oq.id]._max = oqMax;
+        oS += oqScore; oM += oqMax;
+      } else {
+        var oA = studentAnswers[oq.id] || '';
+        var modelAns = oq.answer || oq.guidance || '';
+        var markResult = amMarkAnswer(oA, modelAns, oq.marks || 1);
+        oMk[oq.id] = markResult.score;
+        oFb[oq.id] = markResult.feedback;
+        oS += markResult.score;
+        oM += (oq.marks || 1);
+      }
       var fp=document.getElementById('oaip'), fl=document.getElementById('oail');
       if (fp) fp.style.width = Math.round(((oqi2+1)/longQsOnline.length)*100)+'%';
       if (fl) fl.textContent = (oqi2+1)+' of '+longQsOnline.length+' marked';
