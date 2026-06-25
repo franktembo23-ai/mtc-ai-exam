@@ -3802,6 +3802,12 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '  if (!studentAnswer || !studentAnswer.trim()) {\n';
   sc += '    return { score: 0, feedback: "No answer provided — 0 marks awarded.", details: null };\n';
   sc += '  }\n';
+  sc += '  // Direct simplified match — handles numeric answers like "2.4" == "2. 4"\n';
+  sc += '  function simplifyAns(s) { return String(s||"").toLowerCase().replace(/\\s+/g,"").replace(/,/g,".").replace(/[^a-z0-9.\\/=\\-\\+%]/g,""); }\n';
+  sc += '  var sSmp = simplifyAns(studentAnswer), mSmp = simplifyAns(modelAnswer||"");\n';
+  sc += '  if (sSmp && mSmp && (sSmp === mSmp || (sSmp.length >= 2 && mSmp.indexOf(sSmp) !== -1))) {\n';
+  sc += '    return { score: maxMarks, feedback: "Excellent! Your answer matches the key. You matched all key concepts.", details: null };\n';
+  sc += '  }\n';
   sc += '  var result = matchWithSynonyms(studentAnswer, modelAnswer || "");\n';
   sc += '  // ECZ generous marking curve:\n';
   sc += '  // 75%+ concepts matched → full marks (phrasing should never cost full credit)\n';
@@ -5584,6 +5590,20 @@ function teSubmitExam() {
   }
   function teAutoMark(studentAnswer, modelAnswer, maxMarks) {
     if (!studentAnswer || !studentAnswer.trim()) return { score:0, feedback:'No answer provided — 0 marks awarded.' };
+
+    // ── Direct simplified match (handles numeric answers: "2.4" == "2. 4") ──
+    function simplifyAns(s) {
+      return String(s||'').toLowerCase().replace(/\s+/g,'').replace(/,/g,'.').replace(/[^a-z0-9.\/=\-\+%]/g,'');
+    }
+    var sSimple = simplifyAns(studentAnswer);
+    var mSimple = simplifyAns(modelAnswer);
+    if (sSimple && mSimple) {
+      var exactMatch     = sSimple === mSimple;
+      var containedMatch = sSimple.length >= 2 && mSimple.indexOf(sSimple) !== -1;
+      if (exactMatch || containedMatch) {
+        return { score: maxMarks, feedback: 'Excellent! Your answer matches the key. You matched all key concepts.' };
+      }
+    }
     var res = teMatchAnswer(studentAnswer, modelAnswer || '');
     var rawPct = res.totalConcepts > 0 ? (res.matched / res.totalConcepts) : 0;
     var scorePct;
@@ -8042,6 +8062,12 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
     }
     function amMarkAnswer(studentAnswer, modelAnswer, maxMarks) {
       if (!studentAnswer || !studentAnswer.trim()) return { score:0, feedback:'No answer provided — 0 marks awarded.' };
+      // Direct simplified match — handles numeric answers like "2.4" == "2. 4"
+      function amSimplify(s) { return String(s||'').toLowerCase().replace(/\s+/g,'').replace(/,/g,'.').replace(/[^a-z0-9.\/=\-\+%]/g,''); }
+      var asSmp = amSimplify(studentAnswer), amSmp = amSimplify(modelAnswer);
+      if (asSmp && amSmp && (asSmp === amSmp || (asSmp.length >= 2 && amSmp.indexOf(asSmp) !== -1))) {
+        return { score: maxMarks, feedback: 'Excellent! Your answer matches the key. You matched all key concepts.' };
+      }
       var res = amMatch(studentAnswer, modelAnswer||'');
       var rawPct = res.totalConcepts>0?(res.matched/res.totalConcepts):0;
       var scorePct;
