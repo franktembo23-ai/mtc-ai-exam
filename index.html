@@ -1350,7 +1350,26 @@ var MATH_KB_CATEGORIES = [
   },
   {
     name: 'Powers/Roots',
-    keys: ['x²','x³','xⁿ','x⁻¹','√','∛','∜','^','x₁','x₂','xₙ','⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹']
+    keys: ['x²','x³','xⁿ','x⁻¹','√','∛','∜','^','x₁','x₂','xₙ','⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹','₀','₁','₂','₃','₄','₅','₆','₇','₈','₉']
+  },
+  {
+    name: 'Super/Sub',
+    keys: [
+      // ── Superscript digits ─────────────────
+      '⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹',
+      // ── Superscript letters ────────────────
+      'ᵃ','ᵇ','ᶜ','ᵈ','ᵉ','ᶠ','ᵍ','ʰ','ⁱ','ʲ','ᵏ','ˡ','ᵐ','ⁿ','ᵒ','ᵖ','ʳ','ˢ','ᵗ','ᵘ','ᵛ','ʷ','ˣ','ʸ','ᶻ',
+      // ── Superscript symbols ────────────────
+      '⁺','⁻','⁼','⁽','⁾',
+      // ── Subscript digits ───────────────────
+      '₀','₁','₂','₃','₄','₅','₆','₇','₈','₉',
+      // ── Subscript letters (chemistry / physics) ──
+      'ₐ','ₑ','ᵢ','ₒ','ᵤ','ₓ','ₙ','ₘ','ₖ','ₗ','ₛ','ₜ','ᵣ',
+      // ── Subscript symbols ─────────────────
+      '₊','₋','₌','₍','₎',
+      // ── Common super/subscript combos ─────
+      'x²','x³','xⁿ','x⁻¹','x⁻²','x½','CO₂','H₂O','H₂SO₄','O₂','N₂','CH₄','NH₃'
+    ]
   },
   {
     name: 'Fractions',
@@ -1450,6 +1469,9 @@ function openMathKeyboardFor(qid, fieldType, optIdx) {
   else if (fieldType === 'answer')   { elId = 'qanswer-'   + qid; fieldLabel = 'Model Answer'; }
   else if (fieldType === 'guidance') { elId = 'qguidance-' + qid; fieldLabel = 'Mark Scheme / Guidance'; }
   else if (fieldType === 'opt')      { elId = 'opt-inp-'   + qid + '-' + optIdx; fieldLabel = 'Option ' + String.fromCharCode(65 + optIdx); }
+  // Sub-part fields: fieldType = 'sptext' | 'spanswer', optIdx = part label (a,b,c...)
+  else if (fieldType === 'sptext')   { elId = 'sp-text-'   + qid + '-' + optIdx; fieldLabel = 'Sub-Part (' + optIdx + ') Question'; }
+  else if (fieldType === 'spanswer') { elId = 'sp-answer-' + qid + '-' + optIdx; fieldLabel = 'Sub-Part (' + optIdx + ') Answer Key'; }
 
   var el = document.getElementById(elId);
   if (el) {
@@ -1466,7 +1488,7 @@ function openMathKeyboardFor(qid, fieldType, optIdx) {
   renderMathKeyboard();
 
   var lbl = document.getElementById('math-kb-target-label');
-  if (lbl) lbl.textContent = 'Inserting into: ' + fieldLabel + ' (Q' + qid + ')';
+  if (lbl) lbl.textContent = 'Inserting into: ' + fieldLabel + (qid ? ' (Q' + qid + ')' : '');
 }
 
 function closeMathKeyboard() {
@@ -1484,14 +1506,15 @@ function insertMathSymbol(symbol) {
 
   // Restrict insertion to Exam Creator question fields only (ids starting with our known prefixes)
   if (isValidField && el.id) {
-    isValidField = (el.id.indexOf('qtext-') === 0 || el.id.indexOf('qanswer-') === 0 ||
-                    el.id.indexOf('qguidance-') === 0 || el.id.indexOf('opt-inp-') === 0);
+    isValidField = (el.id.indexOf('qtext-')    === 0 || el.id.indexOf('qanswer-')  === 0 ||
+                    el.id.indexOf('qguidance-') === 0 || el.id.indexOf('opt-inp-')  === 0 ||
+                    el.id.indexOf('sp-text-')   === 0 || el.id.indexOf('sp-answer-') === 0);
   } else {
     isValidField = false;
   }
 
   if (!isValidField) {
-    showToast('Click inside a question, option, or answer field first — then tap a symbol.');
+    showToast('Click inside a question, answer, or sub-part field first — then tap a symbol.');
     return;
   }
 
@@ -1505,7 +1528,7 @@ function insertMathSymbol(symbol) {
   try { el.setSelectionRange(newPos, newPos); } catch(e) {}
 
   // Fire a real 'input' event so the existing oninput handlers
-  // (updateQField / updateOptionText) sync examState automatically — no full re-render needed.
+  // (updateQField / updateOptionText / updateSubPart) sync examState automatically.
   var evt;
   try { evt = new Event('input', { bubbles: true }); }
   catch(e) { evt = document.createEvent('Event'); evt.initEvent('input', true, true); }
@@ -1938,13 +1961,25 @@ function buildQuestionHTML(q, idx) {
       for (var si = 0; si < sps.length; si++) {
         var sp = sps[si];
         html += '<div class="subpart-editor" id="sp-editor-' + qid + '-' + si + '">';
-        html += '<div class="subpart-row">';
-        html += '<span style="min-width:22px;height:22px;line-height:22px;text-align:center;background:var(--gold);color:var(--navy-dark);font-weight:800;border-radius:4px;font-size:0.8rem;display:inline-block;flex-shrink:0;">(' + sp.label + ')</span>';
-        html += '<input type="text" placeholder="Sub-question text e.g. Mechanical Advantage." value="' + escHtml(sp.text||'') + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;text&quot;,this.value)" style="flex:1;">';
-        html += '<input type="number" min="1" max="20" value="' + (sp.marks||1) + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;marks&quot;,this.value)" title="Marks for this part" style="width:64px;">';
+        // Sub-part header row: label badge + delete button
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+        html += '<span style="min-width:26px;height:26px;line-height:26px;text-align:center;background:var(--gold);color:var(--navy-dark);font-weight:800;border-radius:5px;font-size:0.82rem;display:inline-block;flex-shrink:0;">(' + sp.label + ')</span>';
+        html += '<span style="font-size:0.8rem;color:#8899cc;flex:1;">Sub-Part ' + sp.label.toUpperCase() + '</span>';
+        html += '<input type="number" min="1" max="20" value="' + (sp.marks||1) + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;marks&quot;,this.value)" title="Marks" style="width:64px;">';
         html += '<button class="btn btn-danger btn-xs" onclick="removeSubPart(' + qid + ',' + si + ')">&#128465;</button>';
         html += '</div>';
-        html += '<input type="text" placeholder="Answer key for (' + sp.label + ')  e.g.  MA = Load/Effort = 480/200 = 2.4" value="' + escHtml(sp.answer||'') + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;answer&quot;,this.value)" style="width:100%;margin-top:2px;">';
+        // Sub-question text row
+        html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">';
+        html += '<label style="margin:0;font-size:0.78rem;color:#8899cc;min-width:70px;flex-shrink:0;">Question:</label>';
+        html += '<input type="text" id="sp-text-' + qid + '-' + sp.label + '" placeholder="e.g. Mechanical Advantage." value="' + escHtml(sp.text||'') + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;text&quot;,this.value)" style="flex:1;">';
+        html += '<button type="button" class="math-kb-btn" onmousedown="event.preventDefault()" onclick="openMathKeyboardFor(' + qid + ',&quot;sptext&quot;,&quot;' + sp.label + '&quot;)" title="Math Keyboard">&#129518;</button>';
+        html += '</div>';
+        // Answer key row
+        html += '<div style="display:flex;align-items:center;gap:6px;">';
+        html += '<label style="margin:0;font-size:0.78rem;color:#8899cc;min-width:70px;flex-shrink:0;">Answer Key:</label>';
+        html += '<input type="text" id="sp-answer-' + qid + '-' + sp.label + '" placeholder="e.g. MA = 480/200 = 2.4" value="' + escHtml(sp.answer||'') + '" oninput="updateSubPart(' + qid + ',' + si + ',&quot;answer&quot;,this.value)" style="flex:1;">';
+        html += '<button type="button" class="math-kb-btn" onmousedown="event.preventDefault()" onclick="openMathKeyboardFor(' + qid + ',&quot;spanswer&quot;,&quot;' + sp.label + '&quot;)" title="Math Keyboard">&#129518;</button>';
+        html += '</div>';
         html += '</div>';
       }
       // Total marks auto-sum display
@@ -2227,7 +2262,7 @@ function updateSubPart(qid, spIdx, field, value) {
     }
     break;
   }
-  // Don't re-render on every keystroke — just update the question header display
+  // Only update the header marks display, not full re-render (prevents losing focus)
   updateHeaderDisplay();
 }
 
