@@ -472,6 +472,11 @@ select option { background: #ffffff; color: #1a2744; }
 .biu-btn-u{text-decoration:underline;}
 .biu-btn-sup{font-size:0.65rem;vertical-align:super;}
 .biu-btn-sub{font-size:0.65rem;vertical-align:sub;}
+/* ── Student Answer Math Toolbar ─────────────────────────────── */
+.stud-math-bar{display:flex;flex-wrap:wrap;gap:3px;padding:5px 6px;background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.2);border-radius:7px 7px 0 0;margin-bottom:0;}
+.stud-math-key{padding:3px 7px;border:1px solid rgba(201,162,39,0.3);border-radius:4px;background:rgba(8,18,54,0.7);color:#d4e0ff;font-size:0.82rem;cursor:pointer;font-family:inherit;user-select:none;transition:background 0.15s;}
+.stud-math-key:hover{background:rgba(201,162,39,0.25);color:#fff;}
+.stud-math-bar + textarea,.stud-math-bar + .te-subpart-textarea{border-top-left-radius:0!important;border-top-right-radius:0!important;}
 #tab-takeexam input[type=text] {
   background: #ffffff;
   color: #1a2744;
@@ -2023,23 +2028,61 @@ function buildQuestionHTML(q, idx) {
     html += '</div>';
   }
 
-  // Essay
+  // Essay — Sub-Parts editor (same structure as short answer)
   if (q.type === 'essay') {
-    html += '<div style="margin-bottom:6px;">';
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
-    html += '<label style="margin:0;">Mark Scheme / Guidance (for teacher copy)</label>';
-    html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;guidance&quot;,null)">&#129518; Math</button>';
-    html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;guidance&quot;,' + qid + ',null)">&#9783; Table</button>';
+    var espSps = q.subParts || [];
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">';
+    html += '<label style="margin:0;font-weight:700;">Sub-Parts <span style="font-weight:400;font-size:0.78rem;color:#8899cc;">(a)(b)(c)... — leave empty for single essay answer</span></label>';
+    html += '<button type="button" class="btn btn-navy btn-xs" onclick="addSubPart(' + qid + ')">&#43; Add Part</button>';
     html += '</div>';
-    html += biuBar('qguidance-' + qid);
-    html += '<textarea id="qguidance-' + qid + '" placeholder="List marking points... (Ctrl+V to paste image into question)" oninput="updateQField(' + qid + ',&quot;guidance&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.guidance||'') + '</textarea>';
-    if (q.guidanceTableHtml) {
-      html += '<div class="q-tbl-wrap" id="q-guid-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
-      html += q.guidanceTableHtml;
-      html += '<div style="display:flex;gap:6px;margin-top:4px;">';
-      html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;guidance&quot;,' + qid + ',null)">&#9783; Edit</button>';
-      html += '<button class="btn btn-danger btn-xs" onclick="removeGuidanceTable(' + qid + ')">&#128465;</button>';
-      html += '</div></div>';
+    if (espSps.length > 0) {
+      for (var esi = 0; esi < espSps.length; esi++) {
+        var esp = espSps[esi];
+        html += '<div class="subpart-editor" id="sp-editor-' + qid + '-' + esi + '">';
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+        html += '<span style="min-width:26px;height:26px;line-height:26px;text-align:center;background:var(--gold);color:var(--navy-dark);font-weight:800;border-radius:5px;font-size:0.82rem;display:inline-block;flex-shrink:0;">(' + esp.label + ')</span>';
+        html += '<span style="font-size:0.8rem;color:#8899cc;flex:1;">Sub-Part ' + esp.label.toUpperCase() + '</span>';
+        html += '<input type="number" min="1" max="20" value="' + (esp.marks||1) + '" oninput="updateSubPart(' + qid + ',' + esi + ',&quot;marks&quot;,this.value)" title="Marks" style="width:64px;">';
+        html += '<button class="btn btn-danger btn-xs" onclick="removeSubPart(' + qid + ',' + esi + ')">&#128465;</button>';
+        html += '</div>';
+        html += '<div style="margin-bottom:5px;">';
+        html += '<label style="margin:0 0 2px;font-size:0.78rem;color:#8899cc;display:block;">Question:</label>';
+        html += biuBar('sp-text-' + qid + '-' + esp.label);
+        html += '<div style="display:flex;align-items:center;gap:6px;">';
+        html += '<input type="text" id="sp-text-' + qid + '-' + esp.label + '" placeholder="e.g. Discuss the causes of..." value="' + escHtml(esp.text||'') + '" oninput="updateSubPart(' + qid + ',' + esi + ',&quot;text&quot;,this.value)" style="flex:1;">';
+        html += '<button type="button" class="math-kb-btn" onmousedown="event.preventDefault()" onclick="openMathKeyboardFor(' + qid + ',&quot;sptext&quot;,&quot;' + esp.label + '&quot;)" title="Math">&#129518;</button>';
+        html += '</div></div>';
+        html += '<div>';
+        html += '<label style="margin:0 0 2px;font-size:0.78rem;color:#8899cc;display:block;">Mark Scheme / Points:</label>';
+        html += biuBar('sp-answer-' + qid + '-' + esp.label);
+        html += '<div style="display:flex;align-items:center;gap:6px;">';
+        html += '<input type="text" id="sp-answer-' + qid + '-' + esp.label + '" placeholder="e.g. Key points: deforestation, erosion..." value="' + escHtml(esp.answer||'') + '" oninput="updateSubPart(' + qid + ',' + esi + ',&quot;answer&quot;,this.value)" style="flex:1;">';
+        html += '<button type="button" class="math-kb-btn" onmousedown="event.preventDefault()" onclick="openMathKeyboardFor(' + qid + ',&quot;spanswer&quot;,&quot;' + esp.label + '&quot;)" title="Math">&#129518;</button>';
+        html += '</div></div>';
+        html += '</div>';
+      }
+      var espTotal = 0; for (var esm=0;esm<espSps.length;esm++) espTotal += (parseInt(espSps[esm].marks)||1);
+      html += '<div style="font-size:0.78rem;color:#81c784;padding:3px 0;">Sub-parts total: <strong>' + espTotal + ' marks</strong></div>';
+    } else {
+      // No sub-parts: single guidance textarea
+      html += '<div>';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">';
+      html += '<label style="margin:0;">Mark Scheme / Guidance (for teacher copy)</label>';
+      html += '<button type="button" class="math-kb-btn" onclick="openMathKeyboardFor(' + qid + ',&quot;guidance&quot;,null)">&#129518; Math</button>';
+      html += '<button type="button" class="tbl-insert-btn" onclick="openTableBuilder(&quot;guidance&quot;,' + qid + ',null)">&#9783; Table</button>';
+      html += '</div>';
+      html += biuBar('qguidance-' + qid);
+      html += '<textarea id="qguidance-' + qid + '" placeholder="List marking points... (Ctrl+V to paste image into question)" oninput="updateQField(' + qid + ',&quot;guidance&quot;,this.value)" data-paste-qid="' + qid + '">' + escHtml(q.guidance||'') + '</textarea>';
+      if (q.guidanceTableHtml) {
+        html += '<div class="q-tbl-wrap" id="q-guid-tbl-wrap-' + qid + '" style="margin-top:6px;overflow-x:auto;">';
+        html += q.guidanceTableHtml;
+        html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+        html += '<button class="btn btn-navy btn-xs" onclick="openTableBuilder(&quot;guidance&quot;,' + qid + ',null)">&#9783; Edit</button>';
+        html += '<button class="btn btn-danger btn-xs" onclick="removeGuidanceTable(' + qid + ')">&#128465;</button>';
+        html += '</div></div>';
+      }
+      html += '</div>';
     }
     html += '</div>';
   }
@@ -2107,6 +2150,39 @@ function biuBar(elId) {
     '<button type="button" class="biu-btn biu-btn-sup" onmousedown="' + d + '\'sup\')" title="Superscript">x<sup>2</sup></button>' +
     '<button type="button" class="biu-btn biu-btn-sub" onmousedown="' + d + '\'sub\')" title="Subscript">x<sub>2</sub></button>' +
     '</div>';
+}
+
+// ── Student Math Toolbar (shown above answer textareas in Take Exam + Online Exam) ──
+var STUD_MATH_SYMS = [
+  '\u00B2','\u00B3','\u2070','\u00B9','\u2074','\u2075','\u2076','\u2077','\u2078','\u2079',
+  '\u207B\u00B9','\u207B\u00B2','\u00BD','\u221A',
+  '\u2080','\u2081','\u2082','\u2083','\u2084','\u2085','\u2086','\u2087','\u2088','\u2089',
+  '\u00D7','\u00F7','\u00B1','\u2248','\u2260','\u2264','\u2265','\u03C0','\u00B0',
+  '\u2192','\u221E','\u0394','\u03B1','\u03B2','\u03BC','\u03C3',
+  'CO\u2082','H\u2082O','O\u2082','H\u2082SO\u2084','N\u2082','NH\u2083'
+];
+
+function insertStudMath(targetId, sym) {
+  var el = document.getElementById(targetId);
+  if (!el) return;
+  var s = el.selectionStart !== undefined ? el.selectionStart : el.value.length;
+  var e = el.selectionEnd   !== undefined ? el.selectionEnd   : el.value.length;
+  el.value = el.value.substring(0, s) + sym + el.value.substring(e);
+  var pos = s + sym.length;
+  try { el.setSelectionRange(pos, pos); } catch(ex) {}
+  el.focus();
+}
+
+function studMathBar(targetId) {
+  var h = '<div class="stud-math-bar">';
+  for (var i = 0; i < STUD_MATH_SYMS.length; i++) {
+    var sym = STUD_MATH_SYMS[i];
+    // Escape single quotes for inline onclick
+    var symSafe = sym.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    h += '<button type="button" class="stud-math-key" onmousedown="event.preventDefault()" onclick="insertStudMath(\'' + targetId + '\',\'' + symSafe + '\')" title="' + sym + '">' + sym + '</button>';
+  }
+  h += '</div>';
+  return h;
 }
 
 function updateQField(id, field, value) {
@@ -3442,6 +3518,27 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   // getEl helper with null safety
   sc += 'function getEl(id) { return document.getElementById(id); }\n\n';
 
+  // Student math toolbar (shown above answer textareas so students can type symbols)
+  sc += 'var SM_SYMS=["\\u00B2","\\u00B3","\\u2070","\\u00B9","\\u2074","\\u2075","\\u2076","\\u2077","\\u2078","\\u2079","\\u207B\\u00B9","\\u207B\\u00B2","\\u00BD","\\u221A","\\u2080","\\u2081","\\u2082","\\u2083","\\u2084","\\u2085","\\u2086","\\u2087","\\u2088","\\u2089","\\u00D7","\\u00F7","\\u00B1","\\u2248","\\u2260","\\u2264","\\u2265","\\u03C0","\\u00B0","\\u2192","\\u221E","\\u0394","\\u03B1","\\u03B2","\\u03BC","\\u03C3","CO\\u2082","H\\u2082O","O\\u2082","N\\u2082"];\n\n';
+  sc += 'function insertSM(id, sym) {\n';
+  sc += '  var el = getEl(id); if (!el) return;\n';
+  sc += '  var s = el.selectionStart !== undefined ? el.selectionStart : el.value.length;\n';
+  sc += '  var e2 = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;\n';
+  sc += '  el.value = el.value.substring(0, s) + sym + el.value.substring(e2);\n';
+  sc += '  var pos = s + sym.length;\n';
+  sc += '  try { el.setSelectionRange(pos, pos); } catch(ex) {}\n';
+  sc += '  el.focus();\n';
+  sc += '}\n\n';
+  sc += 'function smBar(targetId) {\n';
+  sc += '  var h = "<div style=\\"display:flex;flex-wrap:wrap;gap:3px;padding:5px 6px;background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.2);border-radius:7px 7px 0 0;\\">";\n';
+  sc += '  for (var i = 0; i < SM_SYMS.length; i++) {\n';
+  sc += '    var sym = SM_SYMS[i];\n';
+  sc += '    h += "<button type=\\"button\\" onmousedown=\\"event.preventDefault()\\" onclick=\\"insertSM(\'"+targetId+"\',\'"+sym+"\')\\" style=\\"padding:3px 7px;border:1px solid rgba(201,162,39,0.3);border-radius:4px;background:rgba(8,18,54,0.7);color:#d4e0ff;font-size:0.82rem;cursor:pointer;font-family:inherit;user-select:none;\\">" + sym + "</button>";\n';
+  sc += '  }\n';
+  sc += '  h += "</div>";\n';
+  sc += '  return h;\n';
+  sc += '}\n\n';
+
   // startExam
   sc += 'function startExam() {\n';
   sc += '  var nEl = getEl("sname"), xEl = getEl("snum");\n';
@@ -3518,12 +3615,14 @@ function buildPublishedExam(s, qs, logoB64, qsJSON, sJSON, geminiKey) {
   sc += '      var sp = sps[si];\n';
   sc += '      h += "<div style=\\"margin-bottom:12px;padding:8px 10px;border-left:3px solid rgba(201,162,39,0.5);border-radius:0 7px 7px 0;\\">";\n';
   sc += '      h += "<div style=\\"font-size:0.88rem;font-weight:600;margin-bottom:5px;\\"><span style=\\"display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:#c9a227;color:#0d1b4b;border-radius:3px;font-size:0.78rem;margin-right:6px;\\">(" + sp.label + ")</span>" + safeQH(sp.text || "") + " <span style=\\"color:#8899cc;font-size:0.76rem;font-weight:400;\\">("+sp.marks+" mark" + ((sp.marks||1)!==1?"s":"") + ")</span></div>";\n';
-  sc += '      h += "<textarea class=\\"sa-in\\" id=\\"sa-" + q.id + "-" + sp.label + "\\" rows=\\"2\\" placeholder=\\"Answer for (" + sp.label + ")...\\"></textarea>";\n';
+  sc += '      h += smBar("sa-" + q.id + "-" + sp.label);\n';
+  sc += '      h += "<textarea class=\\"sa-in\\" id=\\"sa-" + q.id + "-" + sp.label + "\\" rows=\\"2\\" placeholder=\\"Answer for (" + sp.label + ")...\\" style=\\"border-radius:0 0 7px 7px;\\"></textarea>";\n';
   sc += '      h += "</div>";\n';
   sc += '    }\n';
   sc += '  } else {\n';
   sc += '    var rows = q.type === "essay" ? "8" : "3";\n';
-  sc += '    h += "<textarea class=\\"sa-in\\" id=\\"sa-" + q.id + "\\" rows=\\"" + rows + "\\" placeholder=\\"Write your answer here...\\"></textarea>";\n';
+  sc += '    h += smBar("sa-" + q.id);\n';
+  sc += '    h += "<textarea class=\\"sa-in\\" id=\\"sa-" + q.id + "\\" rows=\\"" + rows + "\\" placeholder=\\"Write your answer here...\\" style=\\"border-radius:0 0 8px 8px;\\"></textarea>";\n';
   sc += '  }\n';
   sc += '  h += "</div>";\n';
   sc += '  return h;\n';
@@ -5411,15 +5510,17 @@ function teBuildQ(q, idx) {
       h += '<div class="te-subpart">';
       h += '<div class="te-subpart-label">';
       h += '<span class="te-subpart-lbl">(' + sp.label + ')</span>';
-      h += escHtml(sp.text || '');
+      h += safeQHtml(sp.text || '');
       h += ' <span style="color:#8899cc;font-size:0.76rem;font-weight:400;">(' + (sp.marks||1) + ' mark' + ((sp.marks||1)!==1?'s':'') + ')</span>';
       h += '</div>';
-      h += '<textarea id="te-sa-' + q.id + '-' + sp.label + '" rows="2" placeholder="Answer for (' + sp.label + ')..." class="te-subpart-textarea" data-te-spqid="' + q.id + '" data-te-splbl="' + sp.label + '" style="width:100%;padding:8px 10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:7px;color:#fff;font-size:0.88rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
+      h += studMathBar('te-sa-' + q.id + '-' + sp.label);
+      h += '<textarea id="te-sa-' + q.id + '-' + sp.label + '" rows="2" placeholder="Answer for (' + sp.label + ')..." class="te-subpart-textarea" data-te-spqid="' + q.id + '" data-te-splbl="' + sp.label + '" style="width:100%;padding:8px 10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:0 0 7px 7px;color:#fff;font-size:0.88rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
       h += '</div>';
     }
   } else {
     var rows = q.type === 'essay' ? '7' : '3';
-    h += '<textarea id="te-sa-' + q.id + '" rows="' + rows + '" placeholder="Write your answer here..." style="width:100%;padding:10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:8px;color:#fff;font-size:0.9rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
+    h += studMathBar('te-sa-' + q.id);
+    h += '<textarea id="te-sa-' + q.id + '" rows="' + rows + '" placeholder="Write your answer here..." style="width:100%;padding:10px;background:rgba(8,18,54,0.8);border:1px solid rgba(201,162,39,0.3);border-radius:0 0 8px 8px;color:#fff;font-size:0.9rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
   }
   h += '</div>';
   return h;
@@ -7864,11 +7965,13 @@ function cloudLaunchStudentExam(examData, db, loadDiv) {
           var sp2=sps2[spi];
           qhtml+='<div style="margin-bottom:12px;padding:8px 10px;border-left:3px solid rgba(201,162,39,0.4);border-radius:0 7px 7px 0;">';
           qhtml+='<div style="font-size:.87rem;font-weight:600;margin-bottom:5px;"><span style="display:inline-block;min-width:20px;height:20px;line-height:20px;text-align:center;background:#c9a227;color:#0d1b4b;border-radius:3px;font-size:.76rem;margin-right:6px;">('+sp2.label+')</span>'+safeQHtml(sp2.text||'')+' <span style="color:#8899cc;font-size:.75rem;font-weight:400;">('+((sp2.marks||1))+' mark'+((sp2.marks||1)!==1?'s':'')+')</span></div>';
-          qhtml+='<textarea id="onsa-'+q.id+'-'+sp2.label+'" rows="2" placeholder="Answer for ('+sp2.label+')..." style="width:100%;padding:8px 10px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.3);border-radius:7px;color:#fff;font-size:.88rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
+          qhtml += studMathBar('onsa-'+q.id+'-'+sp2.label);
+          qhtml+='<textarea id="onsa-'+q.id+'-'+sp2.label+'" rows="2" placeholder="Answer for ('+sp2.label+')..." style="width:100%;padding:8px 10px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.3);border-radius:0 0 7px 7px;color:#fff;font-size:.88rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
           qhtml+='</div>';
         }
       } else {
-        qhtml+='<textarea id="onsa-'+q.id+'" rows="'+(q.type==='essay'?7:3)+'" placeholder="Write your answer here..." style="width:100%;padding:10px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.3);border-radius:8px;color:#fff;font-size:.9rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
+        qhtml += studMathBar('onsa-'+q.id);
+        qhtml+='<textarea id="onsa-'+q.id+'" rows="'+(q.type==='essay'?7:3)+'" placeholder="Write your answer here..." style="width:100%;padding:10px;background:rgba(8,18,54,.8);border:1px solid rgba(201,162,39,.3);border-radius:0 0 8px 8px;color:#fff;font-size:.9rem;resize:vertical;font-family:inherit;outline:none;"></textarea>';
       }
       qhtml += '</div>';
     }
