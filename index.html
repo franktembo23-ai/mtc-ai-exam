@@ -967,19 +967,9 @@ select option { background: #ffffff; color: #1a2744; }
 
   <!-- GENERATE BUTTON -->
   <div class="card" style="text-align:center;">
-    <div style="background:rgba(46,204,113,0.08); border:1px solid rgba(46,204,113,0.25); border-radius:8px; padding:10px 12px; margin-bottom:14px; text-align:left;">
-      <div style="font-size:0.82rem; font-weight:700; color:#2ecc71; margin-bottom:4px;">✅ EXACT COPY MODE (NEW) — For 1-500 Pasted Questions — FIXED 60/60</div>
-      <div style="font-size:0.78rem; color:#aab4d4; line-height:1.5;">
-        Paste your 60, 100, 200 or up to 500 questions above (with A. B. C. D. + Answer Key). Click <strong style="color:#2ecc71;">COPY EXACT</strong> to import them <em>exactly as written</em> — no AI rewrite, now 100% accurate even if 56 was failing before. Supports: <code style="background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; font-size:0.75rem;">1. [2026.QUESTION.1] Question text ... A. ... B. ... C. ... D. ...</code> + Answer Key.<br>
-        Prompt: <code style="color:#e8c04a;">COPY ALL EXACTLY 60 QUESTIONS, DO NOT CHANGE ANY QUESTION</code>
-      </div>
-    </div>
     <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-bottom:14px;">
       <button class="btn btn-gold" id="ai-gen-btn" onclick="generateWithAI()" style="font-size:1rem; padding:13px 32px; letter-spacing:0.5px;">
         &#129302; GENERATE QUESTIONS WITH AI
-      </button>
-      <button class="btn" id="ai-exact-btn" onclick="generateExactCopy()" style="font-size:1rem; padding:13px 28px; letter-spacing:0.3px; background:linear-gradient(135deg,#2ecc71,#1a7a3f); color:#fff; font-weight:800; border:none; border-radius:7px; cursor:pointer;">
-        📋 COPY PASTED EXACTLY 1-500 (FIXED 60/60)
       </button>
       <button class="btn btn-danger" onclick="stopAI()" id="ai-stop-btn" style="display:none; padding:13px 24px;">&#9646;&#9646; STOP</button>
     </div>
@@ -4603,710 +4593,256 @@ function setAIProgress(pct, label) {
   if (lbl) lbl.textContent = label || 'Generating...';
 }
 
-
-function parseAnswerKeyMap(fullText) {
-  var map = {};
-  try {
-    var idx = fullText.toUpperCase().indexOf('ANSWER KEY');
-    if (idx === -1) return map;
-    var after = fullText.substring(idx);
-    var lines = after.split(/\n/);
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (/^\s*Q\s+Ans/i.test(line)) continue;
-      var re = /(\d{1,3})\s+([A-Da-d])/g;
-      var mm;
-      while ((mm = re.exec(line)) !== null) {
-        var qNum = parseInt(mm[1], 10);
-        var ans = mm[2].toUpperCase();
-        if (qNum >= 1 && qNum <= 500 && /[A-D]/.test(ans)) {
-          map[qNum] = ans;
-        }
-      }
-    }
-  } catch(e) {}
-  return map;
-}
-
-function extractOptionsFromBlock(block) {
-  var options = {};
-  var markers = [];
-  var re = /(?:^|\s)([A-Da-d])[\.\)\:\-]\s*/g;
-  var m;
-  while ((m = re.exec(block)) !== null) {
-    markers.push({label: m[1].toUpperCase(), index: m.index, end: re.lastIndex});
-  }
-  var seen = {};
-  var ordered = [];
-  for (var i = 0; i < markers.length; i++) {
-    var lab = markers[i].label;
-    if (!seen[lab]) {
-      seen[lab] = true;
-      ordered.push(markers[i]);
-      if (ordered.length >= 4) break;
-    }
-  }
-  if (ordered.length >= 2) {
-    for (var j = 0; j < ordered.length; j++) {
-      var cur = ordered[j];
-      var nextIdx = (j + 1 < ordered.length) ? ordered[j+1].index : block.length;
-      var optText = block.substring(cur.end, nextIdx).trim();
-      if (optText) {
-        var firstLine = optText.split('\n')[0].trim();
-        if (!firstLine) {
-          var parts = optText.split('\n');
-          for (var k = 1; k < parts.length; k++) {
-            if (parts[k].trim()) { firstLine = parts[k].trim(); break; }
-          }
-        }
-        firstLine = firstLine.replace(/^[-–•\s]+/, '').trim();
-        if (firstLine.length > 300) firstLine = firstLine.substring(0, 300).trim();
-        options[cur.label] = firstLine;
-      }
-    }
-  }
-  if (Object.keys(options).length < 2) {
-    var optRegex = /^\s*([A-Da-d])[\.\)\:\-]\s*(.+)$/gm;
-    options = {};
-    var om;
-    while ((om = optRegex.exec(block)) !== null) {
-      var lbl = om[1].toUpperCase();
-      if (!options[lbl]) options[lbl] = om[2].trim().split('\n')[0].trim();
-    }
-  }
-  return options;
-}
-
-function parseExactCopyQuestions(fullText, mcqMarks, longMarks) {
-  if (!fullText) return [];
-  mcqMarks = mcqMarks || 2;
-  longMarks = longMarks || 5;
-  var text = fullText.replace(/\r\n/g, '\n');
-  var answerMap = parseAnswerKeyMap(text);
-  var upper = text.toUpperCase();
-  var akIdx = upper.indexOf('ANSWER KEY');
-  var questionsPart = akIdx !== -1 ? text.substring(0, akIdx) : text;
-  var headerRegex = /^\s*(\d{1,3})\.\s*(?:\[[^\]]*\])?\s*/gm;
-  var headers = [];
-  var match;
-  while ((match = headerRegex.exec(questionsPart)) !== null) {
-    headers.push({num: parseInt(match[1],10), index: match.index, headerLen: match[0].length});
-  }
-  if (headers.length === 0) return [];
-  var results = [];
-  var skippedInfo = [];
-  for (var h = 0; h < headers.length; h++) {
-    var cur = headers[h];
-    var nextIdx = (h + 1 < headers.length) ? headers[h+1].index : questionsPart.length;
-    var block = questionsPart.substring(cur.index + cur.headerLen, nextIdx).trim();
-    if (!block) { skippedInfo.push(cur.num + ': empty block'); continue; }
-    var options = extractOptionsFromBlock(block);
-    var optCount = Object.keys(options).length;
-    if (optCount < 2) {
-      var looseRe = /([A-Da-d])[\.\)]\s*([^A-D]+?)(?=\s+[A-Da-d][\.\)]\s*|$)/g;
-      var tempOpts = {};
-      var tempBlock = ' ' + block.replace(/\n/g, ' ');
-      var lm;
-      while ((lm = looseRe.exec(tempBlock)) !== null) {
-        var lb = lm[1].toUpperCase();
-        var txt = lm[2].trim();
-        if (txt && !tempOpts[lb]) tempOpts[lb] = txt.substring(0,200);
-      }
-      if (Object.keys(tempOpts).length >= optCount) {
-        options = tempOpts;
-        optCount = Object.keys(options).length;
-      }
-    }
-    if (optCount < 2) {
-      skippedInfo.push(cur.num + ': only ' + optCount + ' options');
-      continue;
-    }
-    var firstOptPos = -1;
-    var earliest = block.length;
-    for (var lbl in options) {
-      if (!options.hasOwnProperty(lbl)) continue;
-      var searchRe = new RegExp('(?:^|\\s)' + lbl + '[\\.\\):\\-]\\s*', 'i');
-      var sM = searchRe.exec(block);
-      if (sM && sM.index < earliest) earliest = sM.index;
-    }
-    if (earliest < block.length) firstOptPos = earliest;
-    var qText = firstOptPos !== -1 ? block.substring(0, firstOptPos).trim() : block.trim();
-    qText = qText.replace(/^\s*\[[^\]]*\]\s*/, '').trim();
-    if (!qText) { skippedInfo.push(cur.num + ': no question text'); continue; }
-    var qNum = cur.num;
-    var correct = answerMap[qNum] || answerMap[String(qNum)] || 'A';
-    var qObj = {
-      id: Date.now() + qNum * 17 + Math.floor(Math.random()*99999),
-      type: 'mcq',
-      text: qText,
-      marks: mcqMarks,
-      options: [
-        {label:'A', text: options['A'] || '', image:null},
-        {label:'B', text: options['B'] || '', image:null},
-        {label:'C', text: options['C'] || '', image:null},
-        {label:'D', text: options['D'] || '', image:null}
-      ],
-      correct: correct,
-      explanation: ''
-    };
-    results.push(qObj);
-  }
-  window._lastExactCopySkipped = skippedInfo;
-  return results;
-}
-
-function generateExactCopy() {
-  var pastedEl = document.getElementById('ai-pasted-content');
-  var pasted = pastedEl ? pastedEl.value : '';
-  var combined = '';
-  if (typeof aiDocContent !== 'undefined' && aiDocContent) combined += aiDocContent + '\n\n';
-  if (pasted && pasted.trim()) combined += pasted.trim();
-  if (!combined.trim()) {
-    showToast('Please paste your 1-500 questions in the box above first!');
-    setAIStatus('No pasted content found to copy.', '#e74c3c');
-    return;
-  }
-  var mcqM = parseInt(document.getElementById('ai-mcq-marks').value) || 2;
-  var longM = parseInt(document.getElementById('ai-long-marks').value) || 5;
-  var countInput = document.getElementById('ai-q-count') ? document.getElementById('ai-q-count').value : '60';
-  var desired = Math.min(500, Math.max(1, parseInt(countInput) || 60));
-  var gb = document.getElementById('ai-gen-btn');
-  var eb = document.getElementById('ai-exact-btn');
-  var pw = document.getElementById('ai-progress-wrap');
-  var rc = document.getElementById('ai-results-card');
-  if (gb) gb.disabled = true;
-  if (eb) eb.disabled = true;
-  if (pw) pw.style.display = 'block';
-  if (rc) rc.style.display = 'none';
-  setAIProgress(10, 'Parsing ' + desired + ' pasted questions exactly...');
-  setAIStatus('COPY MODE: Extracting questions exactly as pasted (1-' + desired + ')...', 'var(--gold-light)');
-  setTimeout(function(){
-    try {
-      var qs = parseExactCopyQuestions(combined, mcqM, longM);
-      var skipped = window._lastExactCopySkipped || [];
-      if (qs.length === 0) {
-        setAIProgress(0, 'Failed');
-        var skipMsg = skipped.length ? ' Skipped Qs: ' + skipped.slice(0,10).join(', ') : '';
-        setAIStatus('Could not parse. Need format: 1. [TAG] Question... A. ... B. ... C. ... D. ... + ANSWER KEY. ' + skipMsg, '#e74c3c');
-        showToast('Parse failed - check A. B. C. D. format');
-        if (gb) gb.disabled = false;
-        if (eb) eb.disabled = false;
-        if (pw) pw.style.display = 'none';
-        return;
-      }
-      if (qs.length > desired) qs = qs.slice(0, desired);
-      generatedQuestions = qs;
-      setAIProgress(100, 'Done! ' + qs.length + ' exact copied (wanted ' + desired + ')');
-      var warn = '';
-      if (qs.length < desired) {
-        warn = ' — only found ' + qs.length + '/' + desired + '. Missing: ' + (skipped.length ? skipped.join(', ') : 'check formatting');
-        setAIStatus('⚠️ COPIED EXACTLY ' + qs.length + ' of ' + desired + ' — ' + skipped.length + ' skipped. ' + warn + '. Lower count to ' + qs.length + ' or fix formatting.', '#e0b030');
-      } else {
-        setAIStatus('✅ COPIED EXACTLY ' + qs.length + ' questions — no AI rewrite! Ready to add to exam.', '#2ecc71');
-      }
-      renderGeneratedQuestions();
-      showToast('Copied ' + qs.length + '/' + desired + ' exactly' + (skipped.length ? ' (' + skipped.length + ' skipped)' : ''));
-      if (gb) gb.disabled = false;
-      if (eb) eb.disabled = false;
-      setTimeout(function(){ if (pw) pw.style.display = 'none'; }, 2000);
-      var rc2 = document.getElementById('ai-results-card');
-      if (rc2) rc2.scrollIntoView({behavior:'smooth'});
-    } catch(e) {
-      setAIStatus('Exact copy error: ' + e.message, '#e74c3c');
-      showToast('Exact copy error: ' + e.message);
-      if (gb) gb.disabled = false;
-      if (eb) eb.disabled = false;
-      if (pw) pw.style.display = 'none';
-    }
-  }, 150);
-}
-
-
-function parseAnswerKeyMap(fullText) {
-  var map = {};
-  try {
-    var idx = fullText.toUpperCase().indexOf('ANSWER KEY');
-    if (idx === -1) return map;
-    var after = fullText.substring(idx);
-    var lines = after.split(/\n/);
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (/^\s*Q\s+Ans/i.test(line)) continue;
-      var re = /(\d{1,3})\s+([A-Da-d])/g;
-      var mm;
-      while ((mm = re.exec(line)) !== null) {
-        var qNum = parseInt(mm[1], 10);
-        var ans = mm[2].toUpperCase();
-        if (qNum >= 1 && qNum <= 500 && /[A-D]/.test(ans)) {
-          map[qNum] = ans;
-        }
-      }
-    }
-  } catch(e) {}
-  return map;
-}
-
-function extractOptionsFromBlock(block) {
-  var options = {};
-  var markers = [];
-  var re = /(?:^|\s)([A-Da-d])[\.\)\:\-]\s*/g;
-  var m;
-  while ((m = re.exec(block)) !== null) {
-    markers.push({label: m[1].toUpperCase(), index: m.index, end: re.lastIndex});
-  }
-  var seen = {};
-  var ordered = [];
-  for (var i = 0; i < markers.length; i++) {
-    var lab = markers[i].label;
-    if (!seen[lab]) {
-      seen[lab] = true;
-      ordered.push(markers[i]);
-      if (ordered.length >= 4) break;
-    }
-  }
-  if (ordered.length >= 2) {
-    for (var j = 0; j < ordered.length; j++) {
-      var cur = ordered[j];
-      var nextIdx = (j + 1 < ordered.length) ? ordered[j+1].index : block.length;
-      var optText = block.substring(cur.end, nextIdx).trim();
-      if (optText) {
-        var firstLine = optText.split('\n')[0].trim();
-        if (!firstLine) {
-          var parts = optText.split('\n');
-          for (var k = 1; k < parts.length; k++) {
-            if (parts[k].trim()) { firstLine = parts[k].trim(); break; }
-          }
-        }
-        firstLine = firstLine.replace(/^[-–•\s]+/, '').trim();
-        if (firstLine.length > 300) firstLine = firstLine.substring(0, 300).trim();
-        options[cur.label] = firstLine;
-      }
-    }
-  }
-  if (Object.keys(options).length < 2) {
-    var optRegex = /^\s*([A-Da-d])[\.\)\:\-]\s*(.+)$/gm;
-    options = {};
-    var om;
-    while ((om = optRegex.exec(block)) !== null) {
-      var lbl = om[1].toUpperCase();
-      if (!options[lbl]) options[lbl] = om[2].trim().split('\n')[0].trim();
-    }
-  }
-  return options;
-}
-
-function parseExactCopyQuestions(fullText, mcqMarks, longMarks) {
-  if (!fullText) return [];
-  mcqMarks = mcqMarks || 2;
-  longMarks = longMarks || 5;
-  var text = fullText.replace(/\r\n/g, '\n');
-  var answerMap = parseAnswerKeyMap(text);
-  var upper = text.toUpperCase();
-  var akIdx = upper.indexOf('ANSWER KEY');
-  var questionsPart = akIdx !== -1 ? text.substring(0, akIdx) : text;
-  var headerRegex = /^\s*(\d{1,3})\.\s*(?:\[[^\]]*\])?\s*/gm;
-  var headers = [];
-  var match;
-  while ((match = headerRegex.exec(questionsPart)) !== null) {
-    headers.push({num: parseInt(match[1],10), index: match.index, headerLen: match[0].length});
-  }
-  if (headers.length === 0) return [];
-  var results = [];
-  var skippedInfo = [];
-  for (var h = 0; h < headers.length; h++) {
-    var cur = headers[h];
-    var nextIdx = (h + 1 < headers.length) ? headers[h+1].index : questionsPart.length;
-    var block = questionsPart.substring(cur.index + cur.headerLen, nextIdx).trim();
-    if (!block) { skippedInfo.push(cur.num + ': empty'); continue; }
-    var options = extractOptionsFromBlock(block);
-    var optCount = Object.keys(options).length;
-    if (optCount < 2) {
-      var looseRe = /([A-Da-d])[\.\)]\s*([^A-D]+?)(?=\s+[A-Da-d][\.\)]\s*|$)/g;
-      var tempOpts = {};
-      var tempBlock = ' ' + block.replace(/\n/g, ' ');
-      var lm;
-      while ((lm = looseRe.exec(tempBlock)) !== null) {
-        var lb = lm[1].toUpperCase();
-        var txt = lm[2].trim();
-        if (txt && !tempOpts[lb]) tempOpts[lb] = txt.substring(0,200);
-      }
-      if (Object.keys(tempOpts).length >= optCount) {
-        options = tempOpts;
-        optCount = Object.keys(options).length;
-      }
-    }
-    if (optCount < 2) {
-      skippedInfo.push(cur.num + ': only ' + optCount + ' opts');
-      continue;
-    }
-    var firstOptPos = -1;
-    var earliest = block.length;
-    for (var lbl in options) {
-      if (!options.hasOwnProperty(lbl)) continue;
-      var searchRe = new RegExp('(?:^|\\s)' + lbl + '[\\.\\):\\-]\\s*', 'i');
-      var sM = searchRe.exec(block);
-      if (sM && sM.index < earliest) earliest = sM.index;
-    }
-    if (earliest < block.length) firstOptPos = earliest;
-    var qText = firstOptPos !== -1 ? block.substring(0, firstOptPos).trim() : block.trim();
-    qText = qText.replace(/^\s*\[[^\]]*\]\s*/, '').trim();
-    if (!qText) { skippedInfo.push(cur.num + ': no qText'); continue; }
-    var qNum = cur.num;
-    var correct = answerMap[qNum] || answerMap[String(qNum)] || 'A';
-    var qObj = {
-      id: Date.now() + qNum * 17 + Math.floor(Math.random()*99999),
-      type: 'mcq',
-      text: qText,
-      marks: mcqMarks,
-      options: [
-        {label:'A', text: options['A'] || '', image:null},
-        {label:'B', text: options['B'] || '', image:null},
-        {label:'C', text: options['C'] || '', image:null},
-        {label:'D', text: options['D'] || '', image:null}
-      ],
-      correct: correct,
-      explanation: ''
-    };
-    results.push(qObj);
-  }
-  window._lastExactCopySkipped = skippedInfo;
-  return results;
-}
-
-function generateExactCopy() {
-  var pastedEl = document.getElementById('ai-pasted-content');
-  var pasted = pastedEl ? pastedEl.value : '';
-  var combined = '';
-  if (typeof aiDocContent !== 'undefined' && aiDocContent) combined += aiDocContent + '\n\n';
-  if (pasted && pasted.trim()) combined += pasted.trim();
-  if (!combined.trim()) {
-    showToast('Please paste your 1-500 questions in the box above first!');
-    setAIStatus('No pasted content found to copy.', '#e74c3c');
-    return;
-  }
-  var mcqM = parseInt(document.getElementById('ai-mcq-marks').value) || 2;
-  var longM = parseInt(document.getElementById('ai-long-marks').value) || 5;
-  var countInput = document.getElementById('ai-q-count') ? document.getElementById('ai-q-count').value : '60';
-  var desired = Math.min(500, Math.max(1, parseInt(countInput) || 60));
-  var gb = document.getElementById('ai-gen-btn');
-  var eb = document.getElementById('ai-exact-btn');
-  var pw = document.getElementById('ai-progress-wrap');
-  var rc = document.getElementById('ai-results-card');
-  if (gb) gb.disabled = true;
-  if (eb) eb.disabled = true;
-  if (pw) pw.style.display = 'block';
-  if (rc) rc.style.display = 'none';
-  setAIProgress(10, 'Parsing ' + desired + ' pasted questions exactly...');
-  setAIStatus('COPY MODE: Extracting questions exactly as pasted (1-' + desired + ')...', 'var(--gold-light)');
-  setTimeout(function(){
-    try {
-      var qs = parseExactCopyQuestions(combined, mcqM, longM);
-      var skipped = window._lastExactCopySkipped || [];
-      if (qs.length === 0) {
-        setAIProgress(0, 'Failed');
-        var skipMsg = skipped.length ? ' Skipped Qs: ' + skipped.slice(0,15).join(', ') : '';
-        setAIStatus('Could not parse. Need: 1. [TAG] Q... A. ... B. ... C. ... D. ... + ANSWER KEY. ' + skipMsg, '#e74c3c');
-        showToast('Parse failed');
-        if (gb) gb.disabled = false;
-        if (eb) eb.disabled = false;
-        if (pw) pw.style.display = 'none';
-        return;
-      }
-      if (qs.length > desired) qs = qs.slice(0, desired);
-      generatedQuestions = qs;
-      setAIProgress(100, 'Done! ' + qs.length + ' exact copied (wanted ' + desired + ')');
-      if (qs.length < desired) {
-        setAIStatus('⚠️ COPIED EXACTLY ' + qs.length + ' of ' + desired + ' — ' + skipped.length + ' skipped: ' + skipped.join(', ') + '. Check A. B. C. D. formatting.', '#e0b030');
-      } else {
-        setAIStatus('✅ COPIED EXACTLY ' + qs.length + ' questions — no AI rewrite! Fixed 60/60 ready.', '#2ecc71');
-      }
-      renderGeneratedQuestions();
-      showToast('Copied ' + qs.length + '/' + desired + ' exactly');
-      if (gb) gb.disabled = false;
-      if (eb) eb.disabled = false;
-      setTimeout(function(){ if (pw) pw.style.display = 'none'; }, 2000);
-      var rc2 = document.getElementById('ai-results-card');
-      if (rc2) rc2.scrollIntoView({behavior:'smooth'});
-    } catch(e) {
-      setAIStatus('Exact copy error: ' + e.message, '#e74c3c');
-      showToast('Exact copy error: ' + e.message);
-      if (gb) gb.disabled = false;
-      if (eb) eb.disabled = false;
-      if (pw) pw.style.display = 'none';
-    }
-  }, 150);
-}
-
 function generateWithAI() {
-  var pastedEl = document.getElementById('ai-pasted-content');
-  var pasted = pastedEl ? pastedEl.value : '';
-  var extraEl = document.getElementById('ai-extra');
-  var extra = extraEl ? extraEl.value.trim() : '';
-  var topicEl = document.getElementById('ai-topic');
-  var topic = topicEl ? topicEl.value.trim() : '';
-  var fullCheck = (pasted + '\n' + (typeof aiDocContent !== 'undefined' ? aiDocContent : '') + '\n' + extra + '\n' + topic).toUpperCase();
-  var isExactIntent = false;
-  if (fullCheck.indexOf('COPY ALL EXACTLY') !== -1 || fullCheck.indexOf('COPY PASTED EXACTLY') !== -1 || fullCheck.indexOf('DO NOT CHANGE ANY QUESTION') !== -1 || fullCheck.indexOf('COPY EXACT') !== -1) {
-    isExactIntent = true;
-  }
-  if (!isExactIntent && pasted) {
-    var qCountDetect = (pasted.match(/^\s*\d{1,3}\.\s*(?:\[[^\]]*\])?/gm) || []).length;
-    var hasOpts = /^\s*A[\.\)]/m.test(pasted) && /^\s*B[\.\)]/m.test(pasted);
-    if (qCountDetect >= 3 && hasOpts) isExactIntent = true;
-  }
-  if (isExactIntent) {
-    showToast('Exact copy mode detected — copying exactly...');
-    generateExactCopy();
-    return;
-  }
-  var key = localStorage.getItem('mtc_gemini_key') || (document.getElementById('ai-api-key') ? document.getElementById('ai-api-key').value.trim() : '');
-  if (!key) { showToast('Please save a Gemini API Key first! Or use COPY EXACT button (no API needed).'); return; }
-  var modelEl = document.getElementById('ai-model-select');
-  var model = modelEl ? modelEl.value : 'gemini-2.5-flash';
-  var qTypeEl = document.getElementById('ai-q-type');
-  var qType = qTypeEl ? qTypeEl.value : 'mcq';
-  var countEl = document.getElementById('ai-q-count');
-  var count = Math.min(500, Math.max(1, parseInt(countEl ? countEl.value : '10') || 10));
-  var diffEl = document.getElementById('ai-difficulty');
-  var diff = diffEl ? diffEl.value : 'Grade 12';
-  var mcqMEl = document.getElementById('ai-mcq-marks');
-  var mcqM = parseInt(mcqMEl ? mcqMEl.value : '2') || 2;
-  var longMEl = document.getElementById('ai-long-marks');
-  var longM = parseInt(longMEl ? longMEl.value : '5') || 5;
-  if (!topic && !pasted.trim() && (!aiDocContent || !aiDocContent.trim()) && aiUploadedImgs.length === 0) {
+  var key = localStorage.getItem('mtc_gemini_key') ||
+            (document.getElementById('ai-api-key') ? document.getElementById('ai-api-key').value.trim() : '');
+  if (!key) { showToast('Please save a Gemini API Key first!'); return; }
+
+  var model  = document.getElementById('ai-model-select').value;
+  var qType  = document.getElementById('ai-q-type').value;
+  var count  = Math.min(500, Math.max(1, parseInt(document.getElementById('ai-q-count').value) || 10));
+  var topic  = document.getElementById('ai-topic').value.trim();
+  var diff   = document.getElementById('ai-difficulty').value;
+  var pasted = document.getElementById('ai-pasted-content').value;
+  var extra  = document.getElementById('ai-extra').value.trim();
+  var mcqM   = parseInt(document.getElementById('ai-mcq-marks').value) || 2;
+  var longM  = parseInt(document.getElementById('ai-long-marks').value) || 5;
+
+  if (!topic && !pasted.trim() && !aiDocContent && aiUploadedImgs.length === 0) {
     showToast('Please enter a Topic, paste content, or upload a document/image!'); return;
   }
+
   aiGenerating = true;
   generatedQuestions = [];
   var gb = document.getElementById('ai-gen-btn');
-  var eb = document.getElementById('ai-exact-btn');
   var sb = document.getElementById('ai-stop-btn');
   var pw = document.getElementById('ai-progress-wrap');
   var rc = document.getElementById('ai-results-card');
   if (gb) gb.disabled = true;
-  if (eb) eb.disabled = true;
   if (sb) sb.style.display = 'inline-block';
   if (pw) pw.style.display = 'block';
   if (rc) rc.style.display = 'none';
-  setAIProgress(2, 'Preparing 1-' + count + ' questions...');
-  setAIStatus('Connecting to ' + (AI_MODELS[model] || model) + ' for ' + count + ' questions (smooth batch mode)...', 'var(--gold-light)');
-  var BATCH = 10;
-  batchGenerate(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, BATCH);
+
+  setAIProgress(5, 'Preparing...');
+  setAIStatus('Connecting to ' + (AI_MODELS[model] || model) + '...', 'var(--gold-light)');
+
+  var BATCH = 50;
+  if (count <= BATCH) {
+    doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM,
+      function(qs) { finishGeneration(qs); },
+      function(err) { errorGeneration(err); }
+    );
+  } else {
+    batchGenerate(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, BATCH);
+  }
 }
 
-function doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temperature, retryCount) {
-  if (typeof retryCount === 'undefined') retryCount = 0;
-  var MAX_RETRIES = 4;
+function doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temperature) {
+  // Merge uploaded doc text into pasted content
   var fullContent = '';
-  if (typeof aiDocContent !== 'undefined' && aiDocContent) fullContent += aiDocContent + '\n\n';
+  if (aiDocContent) fullContent += aiDocContent + '\n\n';
   if (pasted && pasted.trim()) fullContent += pasted.trim();
+
   var prompt = buildAIPrompt(qType, count, topic, diff, fullContent, extra, mcqM, longM, batchStart, batchEnd, avoidTexts);
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key;
+  var url    = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key;
+
+  // Build multipart request if images present
   var parts = buildGeminiParts(prompt);
-  var temp = (typeof temperature === 'number') ? temperature : 0.72;
+
+  var temp = (typeof temperature === 'number') ? temperature : 0.7;
+
+  setAIProgress(30, 'Sending to ' + (AI_MODELS[model] || model) + '...');
   fetch(url, {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contents: [{parts: parts}],
-      generationConfig: {temperature: temp, maxOutputTokens: 16384, topP:0.92, topK:40}
+      contents: [{ parts: parts }],
+      generationConfig: { temperature: temp, maxOutputTokens: 8192 }
     })
-  }).then(function(r){
-    if (!r.ok) {
-      return r.json().then(function(errJson){
-        var msg = (errJson.error && errJson.error.message) ? errJson.error.message : 'HTTP '+r.status;
-        throw new Error(msg + ' (status '+r.status+')');
-      }).catch(function(){ throw new Error('HTTP '+r.status); });
-    }
-    return r.json();
-  }).then(function(d){
-    if (!aiGenerating) return;
-    if (d.error) throw new Error(d.error.message || 'API Error');
-    if (!d.candidates || !d.candidates[0] || !d.candidates[0].content) throw new Error('No response from model');
-    var cParts = d.candidates[0].content.parts;
-    var text = '';
-    for (var pi=0; pi<cParts.length; pi++) if (cParts[pi].text) text += cParts[pi].text;
-    if (!text.trim()) throw new Error('Empty response');
-    var qs = parseAIResponse(text, mcqM, longM);
-    if (qs.length===0 && retryCount<2) {
-      setTimeout(function(){ doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temp, retryCount+1); }, 800);
-      return;
-    }
-    onOk(qs);
-  }).catch(function(e){
-    var msg = e.message || 'Network error';
-    var isRate = msg.indexOf('429')!==-1 || msg.toLowerCase().indexOf('quota')!==-1 || msg.toLowerCase().indexOf('rate')!==-1;
-    if (retryCount < MAX_RETRIES) {
-      var delay = isRate ? (2000+retryCount*1500) : (800+retryCount*600);
-      setAIStatus((isRate ? 'Rate limited, retrying in '+(delay/1000)+'s... ' : 'Retrying... ')+'(attempt '+(retryCount+1)+'/'+MAX_RETRIES+')', '#e0b030');
-      setTimeout(function(){ doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temperature, retryCount+1); }, delay);
-    } else { onErr(msg); }
-  });
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!aiGenerating) return;
+      if (d.error) { onErr(d.error.message); return; }
+      if (!d.candidates || !d.candidates[0]) { onErr('No response from model'); return; }
+      var parts2 = d.candidates[0].content.parts;
+      var text   = '';
+      for (var pi = 0; pi < parts2.length; pi++) {
+        if (parts2[pi].text) text += parts2[pi].text;
+      }
+      setAIProgress(75, 'Parsing questions...');
+      var qs = parseAIResponse(text, mcqM, longM);
+      onOk(qs);
+    }).catch(function(e) { onErr(e.message); });
 }
 
-function normalizeQText(t){ return (t||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
-function dedupeAgainstExisting(newQs, existingQs){
-  var seen={};
-  for (var i=0;i<existingQs.length;i++){ var n=normalizeQText(existingQs[i].text); if(n) seen[n]=true; }
-  var out=[];
-  for (var j=0;j<newQs.length;j++){ var norm=normalizeQText(newQs[j].text); if(!norm) continue; if(!seen[norm]){ seen[norm]=true; out.push(newQs[j]); } }
+// Normalize question text for duplicate comparison (case/whitespace/punctuation insensitive)
+function normalizeQText(t) {
+  return (t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Filter out questions from newQs that already exist (by normalized text) in existingQs
+function dedupeAgainstExisting(newQs, existingQs) {
+  var seen = {};
+  for (var i = 0; i < existingQs.length; i++) {
+    seen[normalizeQText(existingQs[i].text)] = true;
+  }
+  var out = [];
+  for (var j = 0; j < newQs.length; j++) {
+    var norm = normalizeQText(newQs[j].text);
+    if (norm && !seen[norm]) {
+      seen[norm] = true;
+      out.push(newQs[j]);
+    }
+  }
   return out;
 }
 
-function batchGenerate(key, model, qType, total, topic, diff, pasted, extra, mcqM, longM, batchSize){
-  var batches = Math.ceil(total/batchSize);
-  var allQs=[];
-  var MAX_AVOID=80;
-  var MAX_TOPUP_TRIES=4;
-  var failedBatches=0;
-  var MAX_FAILED=8;
-  setAIStatus('Generating '+total+' questions in '+batches+' batches (x'+batchSize+') — smooth mode 1-500...','var(--gold-light)');
-  setAIProgress(3,'Batch 1 of '+batches+' starting...');
-  function avoidListFor(){
-    var start=Math.max(0, allQs.length-MAX_AVOID);
-    var slice=allQs.slice(start);
-    var out=[];
-    for (var i=0;i<slice.length;i++){ var t=(slice[i].text||'').replace(/\s+/g,' ').trim(); if(t.length>150) t=t.substring(0,150)+'...'; out.push(t); }
+function batchGenerate(key, model, qType, total, topic, diff, pasted, extra, mcqM, longM, batchSize) {
+  var batches = Math.ceil(total / batchSize);
+  var allQs = [];
+  var MAX_AVOID = 60;     // cap how many prior questions we list in the prompt (keeps prompt size sane)
+  var MAX_TOPUP_TRIES = 3; // per-batch retries to fill any questions dropped as duplicates
+  setAIStatus('Generating in ' + batches + ' batches (max ' + batchSize + ' per batch)...', 'var(--gold-light)');
+
+  function avoidListFor() {
+    var start = Math.max(0, allQs.length - MAX_AVOID);
+    var slice = allQs.slice(start);
+    var out = [];
+    for (var i = 0; i < slice.length; i++) {
+      var t = (slice[i].text || '').replace(/\s+/g, ' ').trim();
+      if (t.length > 140) t = t.substring(0, 140) + '...';
+      out.push(t);
+    }
     return out;
   }
-  function nextBatch(idx){
+
+  function nextBatch(idx) {
     if (!aiGenerating) return;
-    if (idx>=batches){ finishGeneration(allQs, total); return; }
-    var startNum=idx*batchSize+1;
-    var thisCount=Math.min(batchSize, total-idx*batchSize);
-    var endNum=startNum+thisCount-1;
-    var overallPct=total>0 ? Math.round((allQs.length/total)*92)+3 : 5;
-    if (overallPct>97) overallPct=97;
-    var temp=0.68+(idx%7)*0.04;
-    setAIProgress(overallPct,'Batch '+(idx+1)+'/'+batches+' — Q '+startNum+'-'+endNum+' ('+allQs.length+'/'+total+' ready)');
-    function requestChunk(needed, startAt, endAt, tries, accumulated){
-      if (!accumulated) accumulated=[];
-      if (!aiGenerating) return;
+    if (idx >= batches) { finishGeneration(allQs); return; }
+
+    var startNum = idx * batchSize + 1;
+    var thisCount = Math.min(batchSize, total - idx * batchSize);
+    var endNum = startNum + thisCount - 1;
+    var pct = Math.round((idx / batches) * 85) + 5;
+    var temp = Math.min(0.95, 0.7 + idx * 0.03); // gently increase variety across batches
+
+    setAIProgress(pct, 'Batch ' + (idx + 1) + ' of ' + batches + ' (questions ' + startNum + '-' + endNum + ')...');
+
+    function requestChunk(needed, startAt, endAt, tries) {
       doGeneration(key, model, qType, needed, topic, diff, pasted, extra, mcqM, longM,
-        function(qs){
-          var unique=dedupeAgainstExisting(qs, allQs.concat(accumulated));
-          accumulated=accumulated.concat(unique);
-          var stillMissing=needed-accumulated.length;
-          if (stillMissing>0 && tries<MAX_TOPUP_TRIES && aiGenerating){
-            setAIProgress(overallPct,'Batch '+(idx+1)+'/'+batches+' — topping up '+stillMissing+' more (deduped '+(qs.length-unique.length)+')...');
-            setTimeout(function(){ requestChunk(stillMissing, startAt, endAt, tries+1, accumulated); },700);
+        function(qs) {
+          var unique = dedupeAgainstExisting(qs, allQs);
+          allQs = allQs.concat(unique);
+
+          var stillMissing = needed - unique.length;
+          if (stillMissing > 0 && tries < MAX_TOPUP_TRIES && aiGenerating) {
+            setAIProgress(pct, 'Batch ' + (idx + 1) + ': topping up ' + stillMissing + ' duplicate question(s)...');
+            setTimeout(function() {
+              requestChunk(stillMissing, startAt, endAt, tries + 1);
+            }, 500);
           } else {
-            allQs=allQs.concat(accumulated);
-            if (accumulated.length<needed) setAIStatus('Batch '+(idx+1)+' got '+accumulated.length+'/'+needed+' unique — continuing...','#e0b030');
-            setTimeout(function(){ nextBatch(idx+1); },650);
+            setTimeout(function() { nextBatch(idx + 1); }, 600);
           }
         },
-        function(err){
-          failedBatches++;
-          if (failedBatches>=MAX_FAILED && allQs.length===0){ errorGeneration('Stopped after '+failedBatches+' failures: '+err); return; }
-          setAIStatus('Batch '+(idx+1)+' retrying after error: '+err,'#e0b030');
-          if (tries<2 && aiGenerating){ setTimeout(function(){ requestChunk(needed, startAt, endAt, tries+1, accumulated); },1500); }
-          else { setAIStatus('Batch '+(idx+1)+' skipped ('+err+') — continuing... '+allQs.length+'/'+total,'#e0b030'); setTimeout(function(){ nextBatch(idx+1); },900); }
+        function(err) {
+          setAIStatus('Batch ' + (idx + 1) + ' error: ' + err + '. Showing partial results.', '#e0b030');
+          finishGeneration(allQs);
         },
         startAt, endAt, avoidListFor(), temp
       );
     }
-    requestChunk(thisCount, startNum, endNum, 0, []);
+
+    requestChunk(thisCount, startNum, endNum, 0);
   }
   nextBatch(0);
 }
 
-function finishGeneration(qs, totalRequested){
-  var gb=document.getElementById('ai-gen-btn');
-  var eb=document.getElementById('ai-exact-btn');
-  var sb=document.getElementById('ai-stop-btn');
-  var pw=document.getElementById('ai-progress-wrap');
-  aiGenerating=false;
-  if(gb) gb.disabled=false;
-  if(eb) eb.disabled=false;
-  if(sb) sb.style.display='none';
-  if(qs.length===0){ if(pw) pw.style.display='none'; setAIStatus('No questions parsed. Try clearer topic or use COPY EXACT mode.','#e74c3c'); return; }
-  generatedQuestions=qs;
-  var req=totalRequested||qs.length;
-  var pctLabel=qs.length>=req?'100%':Math.round((qs.length/req)*100)+'%';
-  setAIProgress(100,'Done! '+qs.length+'/'+req+' questions ('+pctLabel+') generated from 1-'+req+'.');
-  setTimeout(function(){ if(pw) pw.style.display='none'; },2000);
-  if(qs.length<req) setAIStatus('Generated '+qs.length+' of '+req+' (some filtered). Click Generate again to top up!','#e0b030');
-  else setAIStatus('Successfully generated '+qs.length+' questions (1-'+qs.length+') — smooth!','#2ecc71');
+function finishGeneration(qs) {
+  var gb = document.getElementById('ai-gen-btn');
+  var sb = document.getElementById('ai-stop-btn');
+  var pw = document.getElementById('ai-progress-wrap');
+  aiGenerating = false;
+  if (gb) gb.disabled = false;
+  if (sb) sb.style.display = 'none';
+  if (qs.length === 0) {
+    if (pw) pw.style.display = 'none';
+    setAIStatus('No questions parsed. Check your topic/content and try again.', '#e74c3c');
+    return;
+  }
+  generatedQuestions = qs;
+  setAIProgress(100, 'Done! ' + qs.length + ' questions generated.');
+  setTimeout(function() { if (pw) pw.style.display = 'none'; }, 1800);
+  setAIStatus('Successfully generated ' + qs.length + ' questions!', '#2ecc71');
   renderGeneratedQuestions();
 }
 
-function errorGeneration(err){
-  var gb=document.getElementById('ai-gen-btn');
-  var eb=document.getElementById('ai-exact-btn');
-  var sb=document.getElementById('ai-stop-btn');
-  var pw=document.getElementById('ai-progress-wrap');
-  aiGenerating=false;
-  if(gb) gb.disabled=false;
-  if(eb) eb.disabled=false;
-  if(sb) sb.style.display='none';
-  if(pw) pw.style.display='none';
-  setAIStatus('Error: '+err,'#e74c3c');
-  showToast('AI Error: '+err);
+function errorGeneration(err) {
+  var gb = document.getElementById('ai-gen-btn');
+  var sb = document.getElementById('ai-stop-btn');
+  var pw = document.getElementById('ai-progress-wrap');
+  aiGenerating = false;
+  if (gb) gb.disabled = false;
+  if (sb) sb.style.display = 'none';
+  if (pw) pw.style.display = 'none';
+  setAIStatus('Error: ' + err, '#e74c3c');
+  showToast('AI Error: ' + err);
 }
 
-function parseAIResponse(text, mcqMarks, longMarks){
-  text=text.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
-  var s=text.indexOf('[');
-  var e=text.lastIndexOf(']');
-  if(s===-1 || e===-1 || e<=s){
-    if(text.indexOf('}{')!==-1){ text='['+text.replace(/}\s*{/g,'},{')+']'; s=text.indexOf('['); e=text.lastIndexOf(']'); } else return [];
-  }
-  var jsonStr=text.substring(s,e+1);
-  function tryParse(str){ try{ return JSON.parse(str);}catch(ex){ return null; } }
-  var arr=tryParse(jsonStr);
-  if(!arr){ var fixed=jsonStr.replace(/,\s*}/g,'}').replace(/,\s*]/g,']'); arr=tryParse(fixed); }
-  if(!arr){
-    var lastObj=jsonStr.lastIndexOf('}');
-    if(lastObj>0){
-      var trimmed=jsonStr.substring(0,lastObj+1)+']';
-      trimmed=trimmed.replace(/,\s*]/,']');
-      arr=tryParse(trimmed);
-      if(!arr){
-        var objs=[];
-        var depth=0,startIdx=-1;
-        for(var i=0;i<jsonStr.length;i++){
-          var ch=jsonStr[i];
-          if(ch==='{'){ if(depth===0) startIdx=i; depth++; }
-          else if(ch==='}'){ depth--; if(depth===0 && startIdx!==-1){ var objStr=jsonStr.substring(startIdx,i+1); var o=tryParse(objStr); if(o && o.text) objs.push(o); startIdx=-1; }}
-        }
-        if(objs.length>0) arr=objs;
-      }
-    }
-  }
-  if(!Array.isArray(arr)) return [];
-  try{
-    var result=[];
-    for(var i=0;i<arr.length;i++){
-      var item=arr[i];
-      if(!item || !item.text) continue;
-      var uid=Date.now()+i*7+Math.floor(Math.random()*99999);
-      var q={id:uid,text:item.text,image:null,marks:item.marks||mcqMarks};
-      if(item.type==='truefalse'){
-        q.type='mcq';
-        q.options=[{label:'A',text:'True',image:null},{label:'B',text:'False',image:null},{label:'C',text:'',image:null},{label:'D',text:'',image:null}];
-        var c=(item.correct||'True');
-        q.correct=(c==='True'||c==='A')?'A':'B';
-        q.explanation=item.explanation||'';
-      } else if(item.type==='short'){
-        q.type='short'; q.answer=item.answer||''; q.marks=item.marks||longMarks;
-      } else if(item.type==='essay'){
-        q.type='essay'; q.guidance=item.guidance||item.answer||''; q.marks=item.marks||longMarks;
+// ── Parse AI JSON response ──────────────────────────────────
+function parseAIResponse(text, mcqMarks, longMarks) {
+  text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  var s = text.indexOf('[');
+  var e = text.lastIndexOf(']');
+  if (s === -1 || e === -1) return [];
+  try {
+    var arr = JSON.parse(text.substring(s, e + 1));
+    var result = [];
+    for (var i = 0; i < arr.length; i++) {
+      var item = arr[i];
+      if (!item || !item.text) continue;
+      var uid = Date.now() + i * 7 + Math.floor(Math.random() * 99999);
+      var q = { id: uid, text: item.text, image: null, marks: item.marks || mcqMarks };
+      if (item.type === 'truefalse') {
+        q.type = 'mcq';
+        q.options = [
+          { label: 'A', text: 'True',  image: null },
+          { label: 'B', text: 'False', image: null },
+          { label: 'C', text: '',      image: null },
+          { label: 'D', text: '',      image: null }
+        ];
+        var c = (item.correct || 'True');
+        q.correct = (c === 'True' || c === 'A') ? 'A' : 'B';
+        q.explanation = item.explanation || '';
+      } else if (item.type === 'short') {
+        q.type = 'short';
+        q.answer = item.answer || '';
+        q.marks = item.marks || longMarks;
+      } else if (item.type === 'essay') {
+        q.type = 'essay';
+        q.guidance = item.guidance || item.answer || '';
+        q.marks = item.marks || longMarks;
       } else {
-        q.type='mcq';
-        var opts=item.options||{};
-        q.options=[{label:'A',text:opts.A||'',image:null},{label:'B',text:opts.B||'',image:null},{label:'C',text:opts.C||'',image:null},{label:'D',text:opts.D||'',image:null}];
-        q.correct=item.correct||'A';
-        q.explanation=item.explanation||'';
+        // default = mcq
+        q.type = 'mcq';
+        var opts = item.options || {};
+        q.options = [
+          { label: 'A', text: opts.A || '', image: null },
+          { label: 'B', text: opts.B || '', image: null },
+          { label: 'C', text: opts.C || '', image: null },
+          { label: 'D', text: opts.D || '', image: null }
+        ];
+        q.correct = item.correct || 'A';
+        q.explanation = item.explanation || '';
       }
       result.push(q);
     }
     return result;
-  }catch(err){ return []; }
+  } catch(err) {
+    return [];
+  }
 }
 
-
-
+// ── Render generated questions ──────────────────────────────
 function renderGeneratedQuestions() {
   var card = document.getElementById('ai-results-card');
   var list = document.getElementById('ai-gen-list');
