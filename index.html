@@ -585,6 +585,7 @@ select option { background: #ffffff; color: #1a2744; }
   <div class="card">
     <div class="card-title">&#9998; Add Questions</div>
     <div class="flex-center" style="margin-bottom:14px;">
+      <button class="btn btn-gold" onclick="applyEnglishSixPartTemplate()" title="Insert PART 1-6 headings: Grammar, Spellings, Punctuation, Word Meaning, Sentence Order, Comprehension (Story 1-3)">&#128214; 6-Part English</button>
       <button class="btn btn-gold" onclick="addQuestion('mcq')">&#43; MCQ</button>
       <button class="btn btn-navy" onclick="addQuestion('short')">&#43; Short Answer</button>
       <button class="btn btn-navy" onclick="addQuestion('essay')">&#43; Essay</button>
@@ -1852,9 +1853,12 @@ function renderQuestions() {
     return;
   }
   var html = '';
+  var rn = 0;
   for (var i = 0; i < examState.questions.length; i++) {
     var q = examState.questions[i];
-    html += buildQuestionHTML(q, i);
+    if (q.type === 'heading') { html += buildQuestionHTML(q, -1); continue; }
+    html += buildQuestionHTML(q, rn);
+    rn++;
   }
   container.innerHTML = html;
   initPasteHandlers();
@@ -1878,6 +1882,19 @@ function renderQuestions() {
 
 function buildQuestionHTML(q, idx) {
   var qid = q.id;
+  if (q.type === 'heading') {
+    var isStory = /^STORY\s*\d/i.test(q.text || '');
+    var html = '<div class="question-block" id="qblock-' + qid + '" style="background:linear-gradient(135deg,rgba(201,162,39,0.14),rgba(201,162,39,0.04));border:1px solid rgba(201,162,39,0.35);">';
+    html += '<div class="q-header">';
+    html += '<div class="q-number" style="background:var(--gold);color:#0d1b4b;">&#128214;</div>';
+    html += '<span class="q-type-badge" style="background:rgba(201,162,39,0.18);color:var(--gold);">' + (isStory ? 'STORY' : 'PART') + '</span>';
+    html += '<button class="btn btn-danger btn-xs delete-q-btn" onclick="deleteQuestion(' + qid + ')">&#128465; Delete</button>';
+    html += '</div>';
+    html += '<div style="font-size:0.95rem;font-weight:800;color:var(--gold);letter-spacing:0.5px;white-space:pre-wrap;line-height:1.5;">' + safeQHtml(q.text || '') + '</div>';
+    html += '<div style="font-size:0.76rem;color:#8899cc;margin-top:6px;">Section heading \u2014 kept verbatim in Preview, Print, Take Exam &amp; Copy.</div>';
+    html += '</div>';
+    return html;
+  }
   var typeName = q.type === 'mcq' ? 'MCQ' : q.type === 'short' ? 'Short Answer' : 'Essay';
   var html = '<div class="question-block" id="qblock-' + qid + '">';
   html += '<div class="q-header">';
@@ -1891,6 +1908,13 @@ function buildQuestionHTML(q, idx) {
   html += '<div class="flex-center" style="margin-bottom:10px;">';
   html += '<label style="margin:0; min-width:90px;">Marks:</label>';
   html += '<input type="number" style="width:80px;" value="' + q.marks + '" min="1" onchange="updateQField(' + qid + ',&quot;marks&quot;,this.value)">';
+  html += '</div>';
+
+  // MTC 6-Part English assignment
+  html += '<div class="flex-center" style="margin-bottom:10px;">';
+  html += '<label style="margin:0; min-width:90px;">Part:</label>';
+  html += '<select style="flex:1;max-width:340px;" onchange="setQuestionPart(' + qid + ',this.value)">' + mtcPartSelectOptions(q.part) + '</select>';
+  if (q.story) html += '<span style="font-size:0.78rem;color:#8899cc;margin-left:8px;">Story ' + q.story + '</span>';
   html += '</div>';
 
   // Question text
@@ -2208,6 +2232,13 @@ function studMathBar(targetId) {
   }
   h += '</div>';
   return h;
+}
+
+function setQuestionPart(id, part) {
+  for (var i = 0; i < examState.questions.length; i++) {
+    if (examState.questions[i].id === id) { examState.questions[i].part = part; break; }
+  }
+  updateHeaderDisplay();
 }
 
 function updateQField(id, field, value) {
@@ -3152,11 +3183,17 @@ function generatePreview() {
   if (s.instructions) {
     html += '<div style="background:#f5f0e8;padding:8px 12px;border-left:4px solid #0d1b4b;margin-bottom:14px;font-size:0.85rem;"><strong>Instructions:</strong> ' + s.instructions + '</div>';
   }
-  // Questions
+  // Questions (PART/STORY headings render as banners; question numbers skip headings)
+  var pNum = 0;
   for (var i=0; i<examState.questions.length; i++) {
     var q = examState.questions[i];
+    if (q.type === 'heading') {
+      html += '<div style="margin:24px 0 14px;padding:9px 14px;background:#0d1b4b;color:#c9a227;border-left:6px solid #c9a227;border-radius:0 6px 6px 0;font-weight:800;font-size:0.98rem;letter-spacing:0.5px;page-break-inside:avoid;white-space:pre-wrap;">' + safeQHtml(q.text || '') + '</div>';
+      continue;
+    }
+    pNum++;
     html += '<div style="margin-bottom:18px; page-break-inside:avoid;">';
-    html += '<div style="font-weight:bold; margin-bottom:5px;">' + (i+1) + '. ' + (q.text || '<em style="color:#999;">[No question text]</em>') + ' <span style="font-weight:normal; font-size:0.82rem; color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span></div>';
+    html += '<div style="font-weight:bold; margin-bottom:5px;">' + pNum + '. ' + (q.text || '<em style="color:#999;">[No question text]</em>') + ' <span style="font-weight:normal; font-size:0.82rem; color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span></div>';
     if (q.tableHtml) html += '<div style="overflow-x:auto;margin-bottom:6px;">' + q.tableHtml + '</div>';
     if (q.image) {
       html += '<div style="margin:8px 0; text-align:center;"><img src="' + q.image + '" style="max-width:100%; max-height:300px; border:1px solid #ddd; border-radius:6px;"></div>';
@@ -4444,6 +4481,81 @@ var AI_MODELS = {
 var aiGenerating       = false;
 var generatedQuestions = [];
 
+// ============================================================
+// MTC 6-PART ENGLISH EXAM STRUCTURE (matches MTC Grade 7 English papers)
+// ============================================================
+// The official MTC English exam has exactly 6 parts:
+//   1. Grammar          (Q1-Q20)
+//   2. Spellings        (Q21-Q25)
+//   3. Punctuation      (Q26-Q30)
+//   4. Word Meaning     (Q31-Q38)
+//   5. Sentence Order   (Q39-Q45)
+//   6. Comprehension    (Q46-Q60) with Story 1, Story 2, Story 3
+var MTC_ENGLISH_PARTS = [
+  { id: '1', title: 'PART 1: GRAMMAR',             short: 'Grammar' },
+  { id: '2', title: 'PART 2: SPELLINGS',           short: 'Spellings' },
+  { id: '3', title: 'PART 3: PUNCTUATION',         short: 'Punctuation' },
+  { id: '4', title: 'PART 4: WORD MEANING',        short: 'Word Meaning' },
+  { id: '5', title: 'PART 5: SENTENCE ORDER',      short: 'Sentence Order' },
+  { id: '6', title: 'PART 6: COMPREHENSION',       short: 'Comprehension' }
+];
+var MTC_ENGLISH_STORIES = ['STORY 1', 'STORY 2', 'STORY 3'];
+
+// Regex that recognises any "PART N: TITLE" heading in pasted text
+var MTC_PART_HEADING_RE = /^\s*PART\s*(\d{1,2})\s*[:.\-]?\s*(.+?)\s*$/i;
+// Regex that recognises "STORY 1 / STORY 2 / STORY 3" headings
+var MTC_STORY_HEADING_RE = /^\s*STORY\s*(\d{1,2})\s*[:.\-]?\s*.*$/i;
+
+// Look up the friendly short name for a part id (e.g. "1" -> "Grammar")
+function mtcPartShort(id) {
+  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
+    if (MTC_ENGLISH_PARTS[i].id === String(id)) return MTC_ENGLISH_PARTS[i].short;
+  }
+  return '';
+}
+function mtcPartFull(id) {
+  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
+    if (MTC_ENGLISH_PARTS[i].id === String(id)) return MTC_ENGLISH_PARTS[i].title;
+  }
+  return '';
+}
+// Builds the full part selector options for the Exam Creator question editor
+function mtcPartSelectOptions(selected) {
+  var h = '<option value="">-- No Part --</option>';
+  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
+    var p = MTC_ENGLISH_PARTS[i];
+    var sel = (String(selected) === p.id) ? ' selected' : '';
+    h += '<option value="' + p.id + '"' + sel + '>Part ' + p.id + ': ' + p.short + '</option>';
+  }
+  return h;
+}
+// Applies the 6-part English template to the current exam:
+//   - sets Subject = English, Grade = Grade 7
+//   - inserts the 6 part headings in order (Grammar -> Comprehension)
+//   - inserts the 3 STORY sub-headings inside Part 6
+// Headings are type:'heading' items that render as banners and stay verbatim.
+function applyEnglishSixPartTemplate() {
+  var s = examState.settings;
+  if (!s.subject) s.subject = 'English';
+  if (!s.grade)  s.grade  = 'Grade 7';
+  if (!s.title)  s.title  = 'Grade 7 English';
+  var headings = [];
+  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
+    var p = MTC_ENGLISH_PARTS[i];
+    headings.push({ id: Date.now() + headings.length * 7 + 1, type: 'heading', text: p.title, image: null, marks: 0, part: p.id, story: '' });
+    if (p.id === '6') {
+      for (var s6 = 0; s6 < MTC_ENGLISH_STORIES.length; s6++) {
+        headings.push({ id: Date.now() + headings.length * 7 + 2, type: 'heading', text: MTC_ENGLISH_STORIES[s6], image: null, marks: 0, part: p.id, story: String(s6 + 1) });
+      }
+    }
+  }
+  for (var h = headings.length - 1; h >= 0; h--) examState.questions.unshift(headings[h]);
+  renderQuestions();
+  updateHeaderDisplay();
+  showToast('6-Part English template applied (Grammar \u2192 Comprehension)!');
+  return headings.length;
+}
+
 function saveApiKey() {
   var k = document.getElementById('ai-api-key');
   if (!k) return;
@@ -4711,14 +4823,20 @@ function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
   }
   var answerMap = parseAnswerKey(split.answerKeyText);
 
-  if (qBlocks.length > count) qBlocks = qBlocks.slice(0, count); // never load more than exactly commanded
-
   var loaded = [];
+  var addedQ = 0;
   for (var i = 0; i < qBlocks.length; i++) {
     var b      = qBlocks[i];
-    var parsed = splitQuestionAndOptions(b.text);
     var uid    = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
-    var q      = { id: uid, text: parsed.question, image: null };
+    // PART / STORY headings are kept verbatim as heading items (never counted as questions)
+    if (b.heading) {
+      loaded.push({ id: uid, type: 'heading', text: b.text, image: null, marks: 0, part: b.part || '', story: b.story || '' });
+      continue;
+    }
+    if (addedQ >= count) continue; // never load more than exactly commanded
+    addedQ++;
+    var parsed = splitQuestionAndOptions(b.text);
+    var q      = { id: uid, text: parsed.question, image: null, part: b.part || '', story: b.story || '' };
 
     if (parsed.options) {
       q.type = 'mcq';
@@ -5035,11 +5153,15 @@ function splitQuestionsAndAnswerKey(raw) {
 }
 
 // Break the questions section into blocks keyed by leading "N." question number.
+// Also detects "PART N: TITLE" and "STORY N" headings (MTC 6-part English papers)
+// and emits them as heading blocks in order, tagging each question with its part/story.
 function extractNumberedBlocks(text) {
   var lines = text.replace(/\r\n/g, '\n').split('\n');
   var blocks = [];
   var current = null;
-  var reStart = /^\s*(\d{1,3})\.\s+(.*)$/;
+  var curPart = '';
+  var curStory = '';
+  var reStart = /^\s*(\d{1,3})\.\s*(.*)$/;
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     var t = line.trim();
@@ -5048,16 +5170,44 @@ function extractNumberedBlocks(text) {
     if (/^QUESTIONS?$/i.test(t) || /^END OF QUESTION PAPER$/i.test(t)) continue; // section headers
     if (/COPY EXACTLY.*QUESTIONS/i.test(t)) continue;                // instruction line at top of paper
 
+    // --- PART heading (e.g. "PART 1: GRAMMAR") ---
+    var pm = t.match(MTC_PART_HEADING_RE);
+    if (pm) {
+      if (current) blocks.push(current);
+      current = null;
+      curPart = pm[1];
+      curStory = '';
+      blocks.push({ heading: true, headingText: t, part: curPart, story: '', lines: [t], text: t });
+      continue;
+    }
+    // --- STORY heading (e.g. "STORY 1") ---
+    var sm = t.match(MTC_STORY_HEADING_RE);
+    if (sm) {
+      if (current) blocks.push(current);
+      current = null;
+      curStory = sm[1];
+      // Story heading block also captures the reading passage that follows (verbatim)
+      blocks.push({ heading: true, headingText: t, part: curPart, story: curStory, lines: [t], passage: [], text: t });
+      continue;
+    }
+
     var m = line.match(reStart);
     if (m) {
       if (current) blocks.push(current);
-      current = { num: m[1], lines: [m[2]] };
+      current = { num: m[1], lines: [m[2]], part: curPart, story: curStory };
     } else if (current) {
       current.lines.push(line);
+    } else if (blocks.length && blocks[blocks.length - 1].heading && blocks[blocks.length - 1].story) {
+      // Story passage lines (unnumbered) after a STORY heading are appended verbatim
+      blocks[blocks.length - 1].lines.push(line);
+      blocks[blocks.length - 1].passage.push(line);
+      blocks[blocks.length - 1].text = blocks[blocks.length - 1].lines.join('\n');
     }
   }
   if (current) blocks.push(current);
-  for (var j = 0; j < blocks.length; j++) blocks[j].text = blocks[j].lines.join('\n');
+  for (var j = 0; j < blocks.length; j++) {
+    if (blocks[j].text === undefined) blocks[j].text = blocks[j].lines.join('\n');
+  }
   return blocks;
 }
 
@@ -5124,9 +5274,14 @@ function parseExactQuestions() {
 
   for (var i = 0; i < qBlocks.length; i++) {
     var b = qBlocks[i];
-    var parsed = splitQuestionAndOptions(b.text);
     var uid = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
-    var q = { id: uid, text: parsed.question, image: null, marks: 1 };
+    // PART / STORY headings are kept verbatim as heading items
+    if (b.heading) {
+      loaded.push({ id: uid, type: 'heading', text: b.text, image: null, marks: 0, part: b.part || '', story: b.story || '' });
+      continue;
+    }
+    var parsed = splitQuestionAndOptions(b.text);
+    var q = { id: uid, text: parsed.question, image: null, marks: 1, part: b.part || '', story: b.story || '' };
 
     if (/\[DIAGRAM|\[TABLE/i.test(parsed.question)) needsAttachment.push(b.num);
 
@@ -5177,6 +5332,13 @@ function renderGeneratedQuestions() {
   var html = '';
   for (var i = 0; i < generatedQuestions.length; i++) {
     var q = generatedQuestions[i];
+    if (q.type === 'heading') {
+      html += '<div style="background:linear-gradient(135deg,rgba(201,162,39,0.18),rgba(201,162,39,0.05));border:1px solid rgba(201,162,39,0.45);border-left:6px solid var(--gold);border-radius:9px;padding:12px 16px;margin-bottom:10px;">';
+      html += '<div style="font-size:0.95rem;font-weight:800;color:var(--gold);letter-spacing:0.5px;white-space:pre-wrap;line-height:1.55;">' + safeQHtml(q.text) + '</div>';
+      html += '<div style="font-size:0.75rem;color:#8899cc;margin-top:4px;">&#128214; Section heading \u2014 included verbatim in Copy All &amp; the exam.</div>';
+      html += '</div>';
+      continue;
+    }
     var badge = q.type === 'mcq' ? 'MCQ' : q.type === 'short' ? 'Short Answer' : 'Essay';
     var bi = i; // capture for onclick
     html += '<div style="background:rgba(8,18,54,0.6);border:1px solid rgba(201,162,39,0.22);border-radius:9px;padding:14px;margin-bottom:10px;">';
@@ -5253,9 +5415,16 @@ function clearGenerated() {
 function copyAllGenerated() {
   if (generatedQuestions.length === 0) { showToast('No questions to copy!'); return; }
   var lines = [];
+  var qn = 0;
   for (var i = 0; i < generatedQuestions.length; i++) {
     var q = generatedQuestions[i];
-    lines.push((i+1) + '. ' + q.text);
+    if (q.type === 'heading') {
+      lines.push(q.text);
+      lines.push('');
+      continue;
+    }
+    qn++;
+    lines.push(qn + '. ' + q.text);
     if (q.type === 'mcq' && q.options) {
       for (var j = 0; j < q.options.length; j++) {
         if (q.options[j].text) lines.push('   ' + q.options[j].label + '. ' + q.options[j].text);
@@ -5825,8 +5994,11 @@ function teRenderQuestions() {
   if (!wrap) return;
   var qs = teState.exam.questions;
   var html = '';
+  var tn = 0;
   for (var i = 0; i < qs.length; i++) {
-    html += teBuildQ(qs[i], i);
+    if (qs[i].type === 'heading') { html += teBuildQ(qs[i], -1); continue; }
+    html += teBuildQ(qs[i], tn);
+    tn++;
   }
   wrap.innerHTML = html;
 
@@ -5860,6 +6032,12 @@ function teRenderQuestions() {
 
 function teBuildQ(q, idx) {
   var typeName = q.type === 'mcq' ? 'MCQ' : q.type === 'short' ? 'Short Answer' : 'Essay';
+  if (q.type === 'heading') {
+    var hh = '<div class="question-block part-heading" style="background:linear-gradient(135deg,rgba(201,162,39,0.16),rgba(201,162,39,0.05));border:1px solid rgba(201,162,39,0.4);border-left:6px solid var(--gold);border-radius:9px;padding:12px 16px;margin-bottom:12px;">';
+    hh += '<div style="font-size:0.95rem;font-weight:800;color:var(--gold);letter-spacing:0.5px;white-space:pre-wrap;line-height:1.55;">' + safeQHtml(q.text || '') + '</div>';
+    hh += '</div>';
+    return hh;
+  }
   var h = '';
   h += '<div class="question-block" id="te-qb-' + q.id + '">';
   h += '<div class="q-header">';
