@@ -946,6 +946,14 @@ select option { background: #ffffff; color: #1a2744; }
         <label style="margin:0;font-size:0.8rem;">Or paste text content manually:</label>
       </div>
       <textarea id="ai-pasted-content" rows="5" placeholder="Paste textbook notes, exam questions, chapter extracts, or any text here. The AI will generate questions directly from this content..."></textarea>
+
+      <!-- Verbatim copy toggle -->
+      <div style="display:flex; align-items:flex-start; gap:8px; margin-top:10px; background:rgba(46,204,113,0.06); border:1px solid rgba(46,204,113,0.25); border-radius:8px; padding:9px 12px;">
+        <input type="checkbox" id="ai-verbatim-copy" style="width:16px; height:16px; margin-top:2px; accent-color:#2ecc71; flex-shrink:0;">
+        <label for="ai-verbatim-copy" style="margin:0; font-size:0.79rem; font-weight:400; color:#d4e0ff; cursor:pointer; line-height:1.5;">
+          &#9989; <strong style="color:#81c784;">Copy pasted questions exactly</strong> (verbatim — no AI, nothing reworded). Tick this when the text above is already a full numbered question paper (e.g. "1. Question... A. ... B. ... C. ... D. ...", optionally with an ANSWER KEY section) and you just want it loaded as-is, up to the Number of Questions set above. Typing "copy exactly" / "verbatim" / "don't reword" into Topic or Additional Instructions also triggers this automatically.
+        </label>
+      </div>
     </div>
     <!-- Extra Instructions -->
     <div style="margin-bottom:12px;">
@@ -981,6 +989,21 @@ select option { background: #ffffff; color: #1a2744; }
       </div>
     </div>
     <div id="ai-status-msg" style="font-size:0.85rem; color:#8899cc; min-height:20px;"></div>
+  </div>
+
+  <!-- PASTE EXACT QUESTIONS (NO AI — VERBATIM) -->
+  <div class="card">
+    <div class="card-title">&#128203; Paste Exact Questions <span style="font-weight:400; font-size:0.78rem; color:#8899cc;">(verbatim copy — no AI, nothing reworded)</span></div>
+    <div style="font-size:0.82rem; color:#8899cc; margin-bottom:8px; line-height:1.5;">
+      Paste a full numbered question paper — e.g. "1. Question text... A. ... B. ... C. ... D. ..." — with an optional
+      "ANSWER KEY" section at the end. Questions are loaded exactly as typed; nothing is regenerated or reworded.
+    </div>
+    <textarea id="paste-exact-content" rows="12" placeholder="Paste the full question paper here, including the answer key section if you have one..."></textarea>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+      <button class="btn btn-gold" onclick="parseExactQuestions()">&#128203; PARSE &amp; LOAD QUESTIONS EXACTLY</button>
+      <button class="btn btn-navy btn-sm" onclick="document.getElementById('paste-exact-content').value=''; setPasteExactStatus('','');">&#128465; Clear</button>
+    </div>
+    <div id="paste-exact-status" style="font-size:0.85rem; color:#8899cc; min-height:20px; margin-top:8px;"></div>
   </div>
 
   <!-- RESULTS PANEL -->
@@ -4565,6 +4588,7 @@ function buildAIPrompt(qType, count, topic, difficulty, pastedContent, extra, mc
   lines.push('- Questions must be clear and appropriate for ' + difficulty);
   lines.push('- MCQ distractors must be plausible but wrong');
   lines.push('- Generate exactly ' + count + ' questions total');
+  lines.push('- Keep any "explanation" field short (max 20 words)');
   lines.push('- Start output with [ and end with ]');
   return lines.join('\n');
 }
@@ -4593,11 +4617,14 @@ function setAIProgress(pct, label) {
   if (lbl) lbl.textContent = label || 'Generating...';
 }
 
-function generateWithAI() {
-  var key = localStorage.getItem('mtc_gemini_key') ||
-            (document.getElementById('ai-api-key') ? document.getElementById('ai-api-key').value.trim() : '');
-  if (!key) { showToast('Please save a Gemini API Key first!'); return; }
+// Detect an explicit "just copy this / don't reword it" instruction in free-text fields,
+// so typing that intent (instead of, or in addition to, ticking the checkbox) also works.
+function detectVerbatimIntent(text) {
+  if (!text) return false;
+  return /\b(copy\s*(it|them)?\s*exactly|copy\s*verbatim|verbatim|word[\s-]for[\s-]word|do\s*not\s*reword|don't\s*reword|don't\s*re-word|no\s*rewording|without\s*rewording|exact(ly)?\s*as\s*(pasted|written|typed|given)|keep\s*(it|them)?\s*exact(ly)?|as[\s-]is|do\s*not\s*change\s*(the\s*)?wording|don't\s*change\s*(the\s*)?wording|leave\s*(it|them)?\s*unchanged|unchanged|no\s*ai\s*rewording|just\s*copy|copy\s*(the\s*)?(pasted\s*)?questions?\s*(exactly)?)\b/i.test(text);
+}
 
+function generateWithAI() {
   var model  = document.getElementById('ai-model-select').value;
   var qType  = document.getElementById('ai-q-type').value;
   var count  = Math.min(500, Math.max(1, parseInt(document.getElementById('ai-q-count').value) || 10));
@@ -4611,6 +4638,26 @@ function generateWithAI() {
   if (!topic && !pasted.trim() && !aiDocContent && aiUploadedImgs.length === 0) {
     showToast('Please enter a Topic, paste content, or upload a document/image!'); return;
   }
+
+  // ── VERBATIM COPY MODE ──────────────────────────────────────
+  // Triggered by the "Copy pasted questions exactly" checkbox, or by typing an
+  // instruction like "copy exactly" / "verbatim" / "don't reword" into Topic or
+  // Additional Instructions. In this mode we NEVER call the AI — we reuse the
+  // exact same numbered-block parser as "Paste Exact Questions" so the output
+  // is 100% identical to the source text, for any count from 1 to 500.
+  var verbatimBox   = document.getElementById('ai-verbatim-copy');
+  var wantsVerbatim = (verbatimBox && verbatimBox.checked) || detectVerbatimIntent(extra) || detectVerbatimIntent(topic);
+  if (wantsVerbatim) {
+    var fullContentV = '';
+    if (aiDocContent) fullContentV += aiDocContent + '\n\n';
+    if (pasted && pasted.trim()) fullContentV += pasted.trim();
+    runVerbatimCopyFromAITab(fullContentV, count, mcqM, longM);
+    return;
+  }
+
+  var key = localStorage.getItem('mtc_gemini_key') ||
+            (document.getElementById('ai-api-key') ? document.getElementById('ai-api-key').value.trim() : '');
+  if (!key) { showToast('Please save a Gemini API Key first!'); return; }
 
   aiGenerating = true;
   generatedQuestions = [];
@@ -4626,15 +4673,83 @@ function generateWithAI() {
   setAIProgress(5, 'Preparing...');
   setAIStatus('Connecting to ' + (AI_MODELS[model] || model) + '...', 'var(--gold-light)');
 
-  var BATCH = 50;
+  // Batches scale up to 50 questions per request for bulk generation (e.g. 5, 10, 15, ... 50 per
+  // batch), which is fewer round-trips than before while still fitting the token budget reliably.
+  // Every batch/chunk response is trimmed to exactly the number requested — never more — so the
+  // final total always matches what was commanded, never over-generating.
+  var BATCH = Math.min(50, count);
   if (count <= BATCH) {
     doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM,
-      function(qs) { finishGeneration(qs); },
+      function(qs) { finishGeneration(qs.slice(0, count)); },
       function(err) { errorGeneration(err); }
     );
   } else {
     batchGenerate(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, BATCH);
   }
+}
+
+// ── Verbatim copy from within the AI Generator tab ────────────
+// Identical parsing to "Paste Exact Questions" below, so pasted questions are
+// loaded 100% as typed (no rewording), for any count from 1 to 500.
+function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
+  var pw = document.getElementById('ai-progress-wrap');
+  var rc = document.getElementById('ai-results-card');
+  if (pw) pw.style.display = 'none';
+  if (rc) rc.style.display = 'none';
+
+  if (!raw || !raw.trim()) {
+    setAIStatus('Verbatim copy mode: paste the question text (or upload a document) first, then generate again.', '#e74c3c');
+    showToast('Paste some question text first!');
+    return;
+  }
+
+  var split   = splitQuestionsAndAnswerKey(raw);
+  var qBlocks = extractNumberedBlocks(split.questionsText);
+  if (qBlocks.length === 0) {
+    setAIStatus('Verbatim copy mode: could not find any numbered questions (expected lines like "1. Question text..."). Nothing loaded.', '#e74c3c');
+    return;
+  }
+  var answerMap = parseAnswerKey(split.answerKeyText);
+
+  if (qBlocks.length > count) qBlocks = qBlocks.slice(0, count); // never load more than exactly commanded
+
+  var loaded = [];
+  for (var i = 0; i < qBlocks.length; i++) {
+    var b      = qBlocks[i];
+    var parsed = splitQuestionAndOptions(b.text);
+    var uid    = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
+    var q      = { id: uid, text: parsed.question, image: null };
+
+    if (parsed.options) {
+      q.type = 'mcq';
+      q.marks = mcqM;
+      q.options = [
+        { label: 'A', text: parsed.options.A || '', image: null },
+        { label: 'B', text: parsed.options.B || '', image: null },
+        { label: 'C', text: parsed.options.C || '', image: null },
+        { label: 'D', text: parsed.options.D || '', image: null }
+      ];
+      q.explanation = '';
+      var ans = answerMap[b.num];
+      q.correct = (ans && /^[ABCD]$/i.test(ans.trim())) ? ans.trim().toUpperCase() : 'A';
+    } else {
+      q.type  = 'short';
+      q.marks = longM;
+      q.answer = answerMap[b.num] || '';
+    }
+    loaded.push(q);
+  }
+
+  generatedQuestions = loaded;
+  renderGeneratedQuestions();
+  if (rc) rc.style.display = 'block';
+
+  var msg = 'Loaded ' + loaded.length + ' question(s) exactly as pasted (verbatim copy — no AI used).';
+  if (loaded.length < count) {
+    msg += ' Only ' + loaded.length + ' numbered question(s) were found in the pasted text (you asked for ' + count + ').';
+  }
+  setAIStatus(msg, '#2ecc71');
+  showToast('Verbatim copy: ' + loaded.length + ' question(s) loaded exactly as pasted!');
 }
 
 function doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temperature) {
@@ -4657,21 +4772,32 @@ function doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: parts }],
-      generationConfig: { temperature: temp, maxOutputTokens: 8192 }
+      generationConfig: {
+        temperature: temp,
+        maxOutputTokens: 32768,
+        // These flash models "think" before answering by default, and thinking
+        // tokens are deducted from maxOutputTokens. Left on, a big chunk of the
+        // token budget gets spent on invisible reasoning and the actual JSON
+        // answer gets cut off after only ~10 questions. Turning it off gives
+        // the full budget to the visible output.
+        thinkingConfig: { thinkingBudget: 0 }
+      }
     })
   }).then(function(r) { return r.json(); })
     .then(function(d) {
       if (!aiGenerating) return;
       if (d.error) { onErr(d.error.message); return; }
       if (!d.candidates || !d.candidates[0]) { onErr('No response from model'); return; }
-      var parts2 = d.candidates[0].content.parts;
+      var cand   = d.candidates[0];
+      var parts2 = (cand.content && cand.content.parts) ? cand.content.parts : [];
       var text   = '';
       for (var pi = 0; pi < parts2.length; pi++) {
         if (parts2[pi].text) text += parts2[pi].text;
       }
       setAIProgress(75, 'Parsing questions...');
       var qs = parseAIResponse(text, mcqM, longM);
-      onOk(qs);
+      var truncated = (cand.finishReason === 'MAX_TOKENS');
+      onOk(qs, truncated);
     }).catch(function(e) { onErr(e.message); });
 }
 
@@ -4701,8 +4827,10 @@ function batchGenerate(key, model, qType, total, topic, diff, pasted, extra, mcq
   var batches = Math.ceil(total / batchSize);
   var allQs = [];
   var MAX_AVOID = 60;     // cap how many prior questions we list in the prompt (keeps prompt size sane)
-  var MAX_TOPUP_TRIES = 3; // per-batch retries to fill any questions dropped as duplicates
-  setAIStatus('Generating in ' + batches + ' batches (max ' + batchSize + ' per batch)...', 'var(--gold-light)');
+  var MAX_TOPUP_TRIES = 4; // per-batch retries to fill any questions dropped as duplicates/truncation
+  var totalRequests = 0;
+  var MAX_TOTAL_REQUESTS = batches * (MAX_TOPUP_TRIES + 1) + 10; // hard safety ceiling so a bad run can't loop forever
+  setAIStatus('Generating ' + total + ' question(s) in ' + batches + ' batch(es) of up to ' + batchSize + ' each...', 'var(--gold-light)');
 
   function avoidListFor() {
     var start = Math.max(0, allQs.length - MAX_AVOID);
@@ -4718,7 +4846,7 @@ function batchGenerate(key, model, qType, total, topic, diff, pasted, extra, mcq
 
   function nextBatch(idx) {
     if (!aiGenerating) return;
-    if (idx >= batches) { finishGeneration(allQs); return; }
+    if (idx >= batches) { finishGeneration(allQs.slice(0, total)); return; } // absolute safety cap: never exceed the commanded total
 
     var startNum = idx * batchSize + 1;
     var thisCount = Math.min(batchSize, total - idx * batchSize);
@@ -4729,14 +4857,27 @@ function batchGenerate(key, model, qType, total, topic, diff, pasted, extra, mcq
     setAIProgress(pct, 'Batch ' + (idx + 1) + ' of ' + batches + ' (questions ' + startNum + '-' + endNum + ')...');
 
     function requestChunk(needed, startAt, endAt, tries) {
+      if (!aiGenerating) return;
+      totalRequests++;
+      if (totalRequests > MAX_TOTAL_REQUESTS) {
+        setAIStatus('Stopped after too many attempts — showing ' + allQs.length + ' question(s) generated so far.', '#e0b030');
+        finishGeneration(allQs);
+        return;
+      }
       doGeneration(key, model, qType, needed, topic, diff, pasted, extra, mcqM, longM,
-        function(qs) {
+        function(qs, truncated) {
           var unique = dedupeAgainstExisting(qs, allQs);
+          // Never accept more than exactly what this chunk still needs — a model that returns
+          // extra items must not push the running total past the commanded question count.
+          if (unique.length > needed) unique = unique.slice(0, needed);
           allQs = allQs.concat(unique);
 
           var stillMissing = needed - unique.length;
           if (stillMissing > 0 && tries < MAX_TOPUP_TRIES && aiGenerating) {
-            setAIProgress(pct, 'Batch ' + (idx + 1) + ': topping up ' + stillMissing + ' duplicate question(s)...');
+            var msg = truncated
+              ? 'Batch ' + (idx + 1) + ': response was cut short, retrying ' + stillMissing + ' more question(s)...'
+              : 'Batch ' + (idx + 1) + ': topping up ' + stillMissing + ' duplicate question(s)...';
+            setAIProgress(pct, msg);
             setTimeout(function() {
               requestChunk(stillMissing, startAt, endAt, tries + 1);
             }, 500);
@@ -4789,13 +4930,41 @@ function errorGeneration(err) {
 }
 
 // ── Parse AI JSON response ──────────────────────────────────
+// Scan for a top-level JSON array and pull out each {...} object individually,
+// tracking brace depth and string state. This recovers every complete question
+// even if the response got cut off mid-array (e.g. hit MAX_TOKENS) - a plain
+// JSON.parse on the whole array would throw and lose ALL questions in that case.
+function extractJsonObjects(text) {
+  var s = text.indexOf('[');
+  if (s === -1) return [];
+  var i = s + 1, n = text.length, out = [];
+  while (i < n) {
+    while (i < n && /[\s,]/.test(text[i])) i++;
+    if (i >= n || text[i] === ']') break;
+    if (text[i] !== '{') { i++; continue; }
+    var depth = 0, start = i, inStr = false, esc = false;
+    for (; i < n; i++) {
+      var ch = text[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { i++; break; } }
+    }
+    if (depth !== 0) break; // final object was cut off mid-stream - stop cleanly, keep what we have
+    try { out.push(JSON.parse(text.substring(start, i))); } catch (e) { /* skip malformed object */ }
+  }
+  return out;
+}
+
 function parseAIResponse(text, mcqMarks, longMarks) {
   text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  var s = text.indexOf('[');
-  var e = text.lastIndexOf(']');
-  if (s === -1 || e === -1) return [];
   try {
-    var arr = JSON.parse(text.substring(s, e + 1));
+    var arr = extractJsonObjects(text);
     var result = [];
     for (var i = 0; i < arr.length; i++) {
       var item = arr[i];
@@ -4840,6 +5009,160 @@ function parseAIResponse(text, mcqMarks, longMarks) {
   } catch(err) {
     return [];
   }
+}
+
+// ── Paste Exact Questions (no AI — verbatim copy) ────────────
+function setPasteExactStatus(msg, color) {
+  var el = document.getElementById('paste-exact-status');
+  if (el) { el.textContent = msg; el.style.color = color || '#8899cc'; }
+}
+
+// Split raw pasted text into the question section and the answer-key section.
+// Handles "ANSWER KEY" on one line, or "ANSWER" / "KEY" on two separate lines.
+function splitQuestionsAndAnswerKey(raw) {
+  var lines = raw.replace(/\r\n/g, '\n').split('\n');
+  var keyStart = -1;
+  for (var i = 0; i < lines.length; i++) {
+    var t = lines[i].trim();
+    if (/^ANSWER\s*KEY$/i.test(t)) { keyStart = i; break; }
+    if (/^ANSWER$/i.test(t) && lines[i + 1] && /^KEY$/i.test(lines[i + 1].trim())) { keyStart = i; break; }
+  }
+  if (keyStart === -1) return { questionsText: raw, answerKeyText: '' };
+  return {
+    questionsText: lines.slice(0, keyStart).join('\n'),
+    answerKeyText: lines.slice(keyStart).join('\n')
+  };
+}
+
+// Break the questions section into blocks keyed by leading "N." question number.
+function extractNumberedBlocks(text) {
+  var lines = text.replace(/\r\n/g, '\n').split('\n');
+  var blocks = [];
+  var current = null;
+  var reStart = /^\s*(\d{1,3})\.\s+(.*)$/;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var t = line.trim();
+    if (!t) continue;
+    if (/^=+$/.test(t) || /^-+$/.test(t)) continue;                 // banner rules
+    if (/^QUESTIONS?$/i.test(t) || /^END OF QUESTION PAPER$/i.test(t)) continue; // section headers
+    if (/COPY EXACTLY.*QUESTIONS/i.test(t)) continue;                // instruction line at top of paper
+
+    var m = line.match(reStart);
+    if (m) {
+      if (current) blocks.push(current);
+      current = { num: m[1], lines: [m[2]] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  if (current) blocks.push(current);
+  for (var j = 0; j < blocks.length; j++) blocks[j].text = blocks[j].lines.join('\n');
+  return blocks;
+}
+
+// Within one question block, separate the question stem from A/B/C/D options (if present).
+function splitQuestionAndOptions(blockText) {
+  var joined = blockText.split('\n')
+    .map(function(l) { return l.replace(/[ \t]+/g, ' ').trim(); })
+    .filter(function(l) { return l.length; })
+    .join(' ');
+
+  var optRe = /\bA\.\s*([\s\S]*?)\s*\bB\.\s*([\s\S]*?)\s*\bC\.\s*([\s\S]*?)\s*\bD\.\s*([\s\S]*)$/;
+  var m = joined.match(optRe);
+  if (!m) return { question: joined.trim(), options: null };
+
+  var question = joined.substring(0, joined.indexOf(m[0])).trim();
+  return {
+    question: question,
+    options: {
+      A: m[1].trim(),
+      B: m[2].trim(),
+      C: m[3].trim(),
+      D: m[4].trim()
+    }
+  };
+}
+
+// Parse the "ANSWER KEY" section into { "1": "B", "2": "B", ... }.
+// Tolerates a missing leading number on the first line (source papers sometimes lose it in copy/paste)
+// by inferring it from the running sequence.
+function parseAnswerKey(text) {
+  var map = {};
+  if (!text) return map;
+  var lines = text.replace(/\r\n/g, '\n').split('\n');
+  var reNum   = /^\s*(\d{1,3})\.\s*(.+?)\s*$/;
+  var reNoNum = /^\s*\.\s*(.+?)\s*$/;
+  var nextExpected = 1;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (!line.trim()) continue;
+    if (/^\s*ANSWER\s*(KEY)?\s*$/i.test(line.trim())) continue;
+    var m = line.match(reNum);
+    if (m) { map[m[1]] = m[2]; nextExpected = parseInt(m[1], 10) + 1; continue; }
+    var m2 = line.match(reNoNum);
+    if (m2) { map[String(nextExpected)] = m2[1]; nextExpected++; }
+  }
+  return map;
+}
+
+function parseExactQuestions() {
+  var raw = document.getElementById('paste-exact-content').value;
+  if (!raw || !raw.trim()) { showToast('Paste some question text first!'); return; }
+
+  var split    = splitQuestionsAndAnswerKey(raw);
+  var qBlocks  = extractNumberedBlocks(split.questionsText);
+  if (qBlocks.length === 0) {
+    setPasteExactStatus('Could not find any numbered questions (expected lines like "1. Question text..."). Nothing loaded.', '#e74c3c');
+    return;
+  }
+  var answerMap = parseAnswerKey(split.answerKeyText);
+
+  var loaded = [];
+  var needsAnswerReview = [];
+  var needsAttachment = [];
+
+  for (var i = 0; i < qBlocks.length; i++) {
+    var b = qBlocks[i];
+    var parsed = splitQuestionAndOptions(b.text);
+    var uid = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
+    var q = { id: uid, text: parsed.question, image: null, marks: 1 };
+
+    if (/\[DIAGRAM|\[TABLE/i.test(parsed.question)) needsAttachment.push(b.num);
+
+    if (parsed.options) {
+      q.type = 'mcq';
+      q.options = [
+        { label: 'A', text: parsed.options.A || '', image: null },
+        { label: 'B', text: parsed.options.B || '', image: null },
+        { label: 'C', text: parsed.options.C || '', image: null },
+        { label: 'D', text: parsed.options.D || '', image: null }
+      ];
+      q.explanation = '';
+      var ans = answerMap[b.num];
+      if (ans && /^[ABCD]$/i.test(ans.trim())) {
+        q.correct = ans.trim().toUpperCase();
+      } else {
+        q.correct = 'A';
+        needsAnswerReview.push(b.num + (ans ? ' (' + ans + ')' : ' (no key entry)'));
+      }
+    } else {
+      // No A-D options found - keep as Short Answer so the text is preserved rather than dropped or reworded.
+      q.type = 'short';
+      q.answer = answerMap[b.num] || '';
+    }
+    loaded.push(q);
+  }
+
+  generatedQuestions = generatedQuestions.concat(loaded);
+  renderGeneratedQuestions();
+  var rc = document.getElementById('ai-results-card');
+  if (rc) rc.style.display = 'block';
+
+  var msg = 'Loaded ' + loaded.length + ' question(s) exactly as pasted.';
+  if (needsAttachment.length) msg += ' Q' + needsAttachment.join(', Q') + ' reference a diagram/table you\'ll need to attach manually.';
+  if (needsAnswerReview.length) msg += ' Answer needs review for Q' + needsAnswerReview.join(', Q') + ' — defaulted to A.';
+  setPasteExactStatus(msg, (needsAnswerReview.length || needsAttachment.length) ? '#e0b030' : '#2ecc71');
 }
 
 // ── Render generated questions ──────────────────────────────
