@@ -585,12 +585,13 @@ select option { background: #ffffff; color: #1a2744; }
   <div class="card">
     <div class="card-title">&#9998; Add Questions</div>
     <div class="flex-center" style="margin-bottom:14px;">
-      <button class="btn btn-gold" onclick="applyEnglishSixPartTemplate()" title="Insert PART 1-6 headings: Grammar, Spellings, Punctuation, Word Meaning, Sentence Order, Comprehension (Story 1-3)">&#128214; 6-Part English</button>
       <button class="btn btn-gold" onclick="addQuestion('mcq')">&#43; MCQ</button>
       <button class="btn btn-navy" onclick="addQuestion('short')">&#43; Short Answer</button>
       <button class="btn btn-navy" onclick="addQuestion('essay')">&#43; Essay</button>
+      <button class="btn btn-navy" style="background:linear-gradient(135deg,#3a2f0a,#241c05);border:1px solid rgba(201,162,39,0.45);" onclick="addQuestion('heading')" title="Add a section heading, e.g. PART 1: GRAMMAR">&#128209; Section Heading</button>
       <button class="btn btn-navy" id="math-kb-toggle-btn" onclick="toggleMathKeyboard()">&#129518; Math Keyboard</button>
-      <div style="margin-left:auto; display:flex; gap:8px;">
+      <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-gold btn-sm" onclick="loadEnglish6PartTemplate()" title="Insert Grammar / Spellings / Punctuation / Word Meaning / Sentence Order / Comprehension (Story 1-3)">&#128218; Grade 7 English — 6 Parts</button>
         <button class="btn btn-navy btn-sm" onclick="clearAllQuestions()">&#128465; Clear All</button>
         <button class="btn btn-gold btn-sm" onclick="saveToBank()">&#128190; Save to Bank</button>
         <button class="btn btn-navy btn-sm" onclick="exportCurrentExam()">&#128229; Export</button>
@@ -1813,7 +1814,9 @@ function updateHeaderDisplay() {
   var t = document.getElementById('cfg-title');
   if (t) examState.settings.title = t.value;
   document.getElementById('exam-title-display').textContent = examState.settings.title || 'New Exam';
-  document.getElementById('q-count-display').textContent = examState.questions.length + ' Question' + (examState.questions.length!==1?'s':'');
+  var realCount = 0;
+  for (var hc = 0; hc < examState.questions.length; hc++) { if (examState.questions[hc].type !== 'heading') realCount++; }
+  document.getElementById('q-count-display').textContent = realCount + ' Question' + (realCount!==1?'s':'');
 }
 
 // ============================================================
@@ -1822,6 +1825,7 @@ function updateHeaderDisplay() {
 function addQuestion(type) {
   qCounter++;
   var q = { id: qCounter, type: type, text: '', marks: 2, image: null };
+  if (type === 'heading') { q.text = 'NEW SECTION HEADING'; q.marks = 0; }
   if (type === 'mcq') {
     q.options = [
       { label: 'A', text: '', image: null },
@@ -1843,6 +1847,43 @@ function addQuestion(type) {
   }, 100);
 }
 
+// Insert the 6-part Grade 7 English structure (Grammar, Spellings, Punctuation, Word Meaning,
+// Sentence Order, Comprehension with Story 1/2/3) as heading markers, in order, ready for
+// questions to be added under each — either manually, via AI Generator, or via verbatim paste
+// (which auto-detects "PART N: ..." / "STORY N" lines and files questions under the right part).
+function loadEnglish6PartTemplate() {
+  var titles = [
+    'PART 1: GRAMMAR',
+    'PART 2: SPELLINGS',
+    'PART 3: PUNCTUATION',
+    'PART 4: WORD MEANING',
+    'PART 5: SENTENCE ORDER',
+    'PART 6: COMPREHENSION'
+  ];
+  for (var i = 0; i < titles.length; i++) {
+    qCounter++;
+    examState.questions.push({ id: qCounter, type: 'heading', text: titles[i], marks: 0, image: null });
+    if (titles[i].indexOf('COMPREHENSION') !== -1) {
+      var stories = ['STORY 1', 'STORY 2', 'STORY 3'];
+      for (var s = 0; s < stories.length; s++) {
+        qCounter++;
+        examState.questions.push({ id: qCounter, type: 'heading', text: stories[s], marks: 0, image: null });
+      }
+    }
+  }
+  // Fill in sensible defaults for this template, without overwriting anything already set.
+  var subjEl  = document.getElementById('cfg-subject');
+  var gradeEl = document.getElementById('cfg-grade');
+  var titleEl = document.getElementById('cfg-title');
+  if (subjEl  && !subjEl.value)  { subjEl.value  = 'English';             examState.settings.subject = 'English'; }
+  if (gradeEl && !gradeEl.value) { gradeEl.value = 'Grade 7';             examState.settings.grade   = 'Grade 7'; }
+  if (titleEl && !titleEl.value) { titleEl.value = 'Grade 7 English Exam'; examState.settings.title   = 'Grade 7 English Exam'; }
+  renderQuestions();
+  updateHeaderDisplay();
+  switchTab('creator');
+  showToast('6-part English structure added: Grammar \u2192 Spellings \u2192 Punctuation \u2192 Word Meaning \u2192 Sentence Order \u2192 Comprehension (Story 1-3).');
+}
+
 // ============================================================
 // RENDER QUESTIONS
 // ============================================================
@@ -1853,12 +1894,13 @@ function renderQuestions() {
     return;
   }
   var html = '';
-  var rn = 0;
+  var totalReal = 0;
+  for (var t = 0; t < examState.questions.length; t++) { if (examState.questions[t].type !== 'heading') totalReal++; }
+  var dispNum = 0;
   for (var i = 0; i < examState.questions.length; i++) {
     var q = examState.questions[i];
-    if (q.type === 'heading') { html += buildQuestionHTML(q, -1); continue; }
-    html += buildQuestionHTML(q, rn);
-    rn++;
+    if (q.type !== 'heading') dispNum++;
+    html += buildQuestionHTML(q, dispNum, totalReal);
   }
   container.innerHTML = html;
   initPasteHandlers();
@@ -1880,25 +1922,28 @@ function renderQuestions() {
   }
 }
 
-function buildQuestionHTML(q, idx) {
+function buildQuestionHTML(q, idx, totalReal) {
   var qid = q.id;
+
+  // ── Section Heading block (PART / STORY marker — not a scored question) ──
   if (q.type === 'heading') {
-    var isStory = /^STORY\s*\d/i.test(q.text || '');
-    var html = '<div class="question-block" id="qblock-' + qid + '" style="background:linear-gradient(135deg,rgba(201,162,39,0.14),rgba(201,162,39,0.04));border:1px solid rgba(201,162,39,0.35);">';
-    html += '<div class="q-header">';
-    html += '<div class="q-number" style="background:var(--gold);color:#0d1b4b;">&#128214;</div>';
-    html += '<span class="q-type-badge" style="background:rgba(201,162,39,0.18);color:var(--gold);">' + (isStory ? 'STORY' : 'PART') + '</span>';
-    html += '<button class="btn btn-danger btn-xs delete-q-btn" onclick="deleteQuestion(' + qid + ')">&#128465; Delete</button>';
-    html += '</div>';
-    html += '<div style="font-size:0.95rem;font-weight:800;color:var(--gold);letter-spacing:0.5px;white-space:pre-wrap;line-height:1.5;">' + safeQHtml(q.text || '') + '</div>';
-    html += '<div style="font-size:0.76rem;color:#8899cc;margin-top:6px;">Section heading \u2014 kept verbatim in Preview, Print, Take Exam &amp; Copy.</div>';
-    html += '</div>';
-    return html;
+    var hLines = String(q.text || '').split('\n').length;
+    var hRows  = Math.max(1, Math.min(10, hLines));
+    var hhtml  = '<div class="question-block q-heading-block" id="qblock-' + qid + '" style="background:linear-gradient(135deg,rgba(201,162,39,0.16),rgba(201,162,39,0.04));border:1.5px solid rgba(201,162,39,0.45);border-radius:10px;padding:12px 16px;margin-bottom:14px;">';
+    hhtml += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+    hhtml += '<span style="font-size:1.05rem;">&#128209;</span>';
+    hhtml += '<span style="color:var(--gold);font-weight:800;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Section Heading' + (hLines > 1 ? ' &amp; Passage' : '') + '</span>';
+    hhtml += '<button class="btn btn-danger btn-xs" style="margin-left:auto;" onclick="deleteQuestion(' + qid + ')">&#128465; Delete</button>';
+    hhtml += '</div>';
+    hhtml += '<textarea rows="' + hRows + '" placeholder="e.g. PART 1: GRAMMAR" oninput="updateQField(' + qid + ',&quot;text&quot;,this.value)" style="width:100%;background:rgba(8,18,54,0.5);border:1px solid rgba(201,162,39,0.3);border-radius:7px;color:var(--gold-light);font-weight:700;padding:8px 10px;">' + escHtml(q.text) + '</textarea>';
+    hhtml += '</div>';
+    return hhtml;
   }
+
   var typeName = q.type === 'mcq' ? 'MCQ' : q.type === 'short' ? 'Short Answer' : 'Essay';
   var html = '<div class="question-block" id="qblock-' + qid + '">';
   html += '<div class="q-header">';
-  html += '<div class="q-number">' + (idx+1) + '</div>';
+  html += '<div class="q-number">' + idx + '</div>';
   html += '<span class="q-type-badge">' + typeName + '</span>';
   html += '<span style="color:#8899cc; font-size:0.8rem; margin-left:6px;">' + q.marks + ' mark' + (q.marks!==1?'s':'') + '</span>';
   html += '<button class="btn btn-danger btn-xs delete-q-btn" onclick="deleteQuestion(' + qid + ')">&#128465; Delete</button>';
@@ -1908,13 +1953,6 @@ function buildQuestionHTML(q, idx) {
   html += '<div class="flex-center" style="margin-bottom:10px;">';
   html += '<label style="margin:0; min-width:90px;">Marks:</label>';
   html += '<input type="number" style="width:80px;" value="' + q.marks + '" min="1" onchange="updateQField(' + qid + ',&quot;marks&quot;,this.value)">';
-  html += '</div>';
-
-  // MTC 6-Part English assignment
-  html += '<div class="flex-center" style="margin-bottom:10px;">';
-  html += '<label style="margin:0; min-width:90px;">Part:</label>';
-  html += '<select style="flex:1;max-width:340px;" onchange="setQuestionPart(' + qid + ',this.value)">' + mtcPartSelectOptions(q.part) + '</select>';
-  if (q.story) html += '<span style="font-size:0.78rem;color:#8899cc;margin-left:8px;">Story ' + q.story + '</span>';
   html += '</div>';
 
   // Question text
@@ -2138,7 +2176,7 @@ function buildQuestionHTML(q, idx) {
 
   // Add Next Question button — quick access at bottom of every question card
   html += '<div style="border-top:2px dashed #dde3f5;margin-top:14px;padding-top:11px;display:flex;align-items:center;justify-content:space-between;gap:8px;">';
-  html += '<span style="font-size:0.76rem;color:#8899cc;">Question ' + (idx+1) + ' of ' + examState.questions.length + '</span>';
+  html += '<span style="font-size:0.76rem;color:#8899cc;">Question ' + idx + ' of ' + totalReal + '</span>';
   html += '<button class="btn btn-success btn-sm" onclick="addNextQuestion(' + qid + ')" style="background:linear-gradient(135deg,#1a7a3f,#0e5c2a);color:#fff;border:none;">';
   html += '&#43; Add Next ' + typeName + ' &nbsp;&#8595;</button>';
   html += '</div>';
@@ -2232,13 +2270,6 @@ function studMathBar(targetId) {
   }
   h += '</div>';
   return h;
-}
-
-function setQuestionPart(id, part) {
-  for (var i = 0; i < examState.questions.length; i++) {
-    if (examState.questions[i].id === id) { examState.questions[i].part = part; break; }
-  }
-  updateHeaderDisplay();
 }
 
 function updateQField(id, field, value) {
@@ -3011,7 +3042,7 @@ function saveToBank() {
     term: examState.settings.term,
     year: examState.settings.year,
     date: new Date().toLocaleDateString(),
-    qCount: examState.questions.length,
+    qCount: examState.questions.filter(function(q){ return q.type !== 'heading'; }).length,
     settings: JSON.parse(JSON.stringify(examState.settings)),
     questions: JSON.parse(JSON.stringify(examState.questions))
   };
@@ -3030,7 +3061,7 @@ function saveToBank() {
   } else {
     bank[subj].push(examEntry);
     saveBankData(bank);
-    showToast('Saved to ' + subj + ' bank! (' + examState.questions.length + ' questions)');
+    showToast('Saved to ' + subj + ' bank! (' + examEntry.qCount + ' questions)');
     renderBank();
   }
 }
@@ -3183,17 +3214,19 @@ function generatePreview() {
   if (s.instructions) {
     html += '<div style="background:#f5f0e8;padding:8px 12px;border-left:4px solid #0d1b4b;margin-bottom:14px;font-size:0.85rem;"><strong>Instructions:</strong> ' + s.instructions + '</div>';
   }
-  // Questions (PART/STORY headings render as banners; question numbers skip headings)
-  var pNum = 0;
+  // Questions
+  var pvNum = 0;
   for (var i=0; i<examState.questions.length; i++) {
     var q = examState.questions[i];
     if (q.type === 'heading') {
-      html += '<div style="margin:24px 0 14px;padding:9px 14px;background:#0d1b4b;color:#c9a227;border-left:6px solid #c9a227;border-radius:0 6px 6px 0;font-weight:800;font-size:0.98rem;letter-spacing:0.5px;page-break-inside:avoid;white-space:pre-wrap;">' + safeQHtml(q.text || '') + '</div>';
+      html += '<div style="margin:16px 0 10px;padding:8px 12px;background:#eef1fa;border-left:4px solid #0d1b4b;border-radius:0 6px 6px 0;page-break-inside:avoid;">';
+      html += '<div style="font-weight:800;letter-spacing:0.03em;">' + escHtml(q.text).replace(/\n/g,'<br>') + '</div>';
+      html += '</div>';
       continue;
     }
-    pNum++;
+    pvNum++;
     html += '<div style="margin-bottom:18px; page-break-inside:avoid;">';
-    html += '<div style="font-weight:bold; margin-bottom:5px;">' + pNum + '. ' + (q.text || '<em style="color:#999;">[No question text]</em>') + ' <span style="font-weight:normal; font-size:0.82rem; color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span></div>';
+    html += '<div style="font-weight:bold; margin-bottom:5px;">' + pvNum + '. ' + (q.text || '<em style="color:#999;">[No question text]</em>') + ' <span style="font-weight:normal; font-size:0.82rem; color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span></div>';
     if (q.tableHtml) html += '<div style="overflow-x:auto;margin-bottom:6px;">' + q.tableHtml + '</div>';
     if (q.image) {
       html += '<div style="margin:8px 0; text-align:center;"><img src="' + q.image + '" style="max-width:100%; max-height:300px; border:1px solid #ddd; border-radius:6px;"></div>';
@@ -3277,9 +3310,15 @@ function buildPrintWindow(isTeacher) {
   if (s.instructions) {
     content += '<div style="background:#f5f0e8;padding:6px 10px;border-left:3px solid #0d1b4b;margin-bottom:12px;font-size:0.85em;"><strong>Instructions:</strong> ' + s.instructions + '</div>';
   }
+  var prNum = 0;
   for (var i=0; i<examState.questions.length; i++) {
     var q = examState.questions[i];
-    content += '<div class="qblock"><strong>' + (i+1) + '. ' + safeQHtml(q.text||'[No question text]') + '</strong> <span style="font-size:0.82em;color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span>';
+    if (q.type === 'heading') {
+      content += '<div style="margin:16px 0 10px;padding:7px 11px;background:#eef1fa;border-left:4px solid #0d1b4b;border-radius:0 6px 6px 0;page-break-inside:avoid;font-weight:800;letter-spacing:0.03em;">' + safeQHtml(q.text).replace(/\n/g,'<br>') + '</div>';
+      continue;
+    }
+    prNum++;
+    content += '<div class="qblock"><strong>' + prNum + '. ' + safeQHtml(q.text||'[No question text]') + '</strong> <span style="font-size:0.82em;color:#555;">(' + q.marks + ' mark' + (q.marks!==1?'s':'') + ')</span>';
     if (q.tableHtml) content += '<div style="overflow-x:auto;margin:8px 0;">' + q.tableHtml + '</div>';
     if (q.image) content += '<img class="qimg" src="' + q.image + '">';
     if (q.type === 'mcq') {
@@ -3321,7 +3360,9 @@ function buildPrintWindow(isTeacher) {
 function publishExam() {
   applySettings();
   var s = examState.settings;
-  var qs = examState.questions;
+  // Section headings are an Exam Creator organizing aid, not a scored question — the published
+  // standalone exam's grading engine doesn't know about them, so they're left out here.
+  var qs = examState.questions.filter(function(q) { return q.type !== 'heading'; });
   if (!s.title) { showToast('Please set an Exam Title in Settings first!'); switchTab('settings'); return; }
   if (!qs.length) { showToast('Add at least one question before publishing!'); return; }
 
@@ -4481,81 +4522,6 @@ var AI_MODELS = {
 var aiGenerating       = false;
 var generatedQuestions = [];
 
-// ============================================================
-// MTC 6-PART ENGLISH EXAM STRUCTURE (matches MTC Grade 7 English papers)
-// ============================================================
-// The official MTC English exam has exactly 6 parts:
-//   1. Grammar          (Q1-Q20)
-//   2. Spellings        (Q21-Q25)
-//   3. Punctuation      (Q26-Q30)
-//   4. Word Meaning     (Q31-Q38)
-//   5. Sentence Order   (Q39-Q45)
-//   6. Comprehension    (Q46-Q60) with Story 1, Story 2, Story 3
-var MTC_ENGLISH_PARTS = [
-  { id: '1', title: 'PART 1: GRAMMAR',             short: 'Grammar' },
-  { id: '2', title: 'PART 2: SPELLINGS',           short: 'Spellings' },
-  { id: '3', title: 'PART 3: PUNCTUATION',         short: 'Punctuation' },
-  { id: '4', title: 'PART 4: WORD MEANING',        short: 'Word Meaning' },
-  { id: '5', title: 'PART 5: SENTENCE ORDER',      short: 'Sentence Order' },
-  { id: '6', title: 'PART 6: COMPREHENSION',       short: 'Comprehension' }
-];
-var MTC_ENGLISH_STORIES = ['STORY 1', 'STORY 2', 'STORY 3'];
-
-// Regex that recognises any "PART N: TITLE" heading in pasted text
-var MTC_PART_HEADING_RE = /^\s*PART\s*(\d{1,2})\s*[:.\-]?\s*(.+?)\s*$/i;
-// Regex that recognises "STORY 1 / STORY 2 / STORY 3" headings
-var MTC_STORY_HEADING_RE = /^\s*STORY\s*(\d{1,2})\s*[:.\-]?\s*.*$/i;
-
-// Look up the friendly short name for a part id (e.g. "1" -> "Grammar")
-function mtcPartShort(id) {
-  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
-    if (MTC_ENGLISH_PARTS[i].id === String(id)) return MTC_ENGLISH_PARTS[i].short;
-  }
-  return '';
-}
-function mtcPartFull(id) {
-  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
-    if (MTC_ENGLISH_PARTS[i].id === String(id)) return MTC_ENGLISH_PARTS[i].title;
-  }
-  return '';
-}
-// Builds the full part selector options for the Exam Creator question editor
-function mtcPartSelectOptions(selected) {
-  var h = '<option value="">-- No Part --</option>';
-  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
-    var p = MTC_ENGLISH_PARTS[i];
-    var sel = (String(selected) === p.id) ? ' selected' : '';
-    h += '<option value="' + p.id + '"' + sel + '>Part ' + p.id + ': ' + p.short + '</option>';
-  }
-  return h;
-}
-// Applies the 6-part English template to the current exam:
-//   - sets Subject = English, Grade = Grade 7
-//   - inserts the 6 part headings in order (Grammar -> Comprehension)
-//   - inserts the 3 STORY sub-headings inside Part 6
-// Headings are type:'heading' items that render as banners and stay verbatim.
-function applyEnglishSixPartTemplate() {
-  var s = examState.settings;
-  if (!s.subject) s.subject = 'English';
-  if (!s.grade)  s.grade  = 'Grade 7';
-  if (!s.title)  s.title  = 'Grade 7 English';
-  var headings = [];
-  for (var i = 0; i < MTC_ENGLISH_PARTS.length; i++) {
-    var p = MTC_ENGLISH_PARTS[i];
-    headings.push({ id: Date.now() + headings.length * 7 + 1, type: 'heading', text: p.title, image: null, marks: 0, part: p.id, story: '' });
-    if (p.id === '6') {
-      for (var s6 = 0; s6 < MTC_ENGLISH_STORIES.length; s6++) {
-        headings.push({ id: Date.now() + headings.length * 7 + 2, type: 'heading', text: MTC_ENGLISH_STORIES[s6], image: null, marks: 0, part: p.id, story: String(s6 + 1) });
-      }
-    }
-  }
-  for (var h = headings.length - 1; h >= 0; h--) examState.questions.unshift(headings[h]);
-  renderQuestions();
-  updateHeaderDisplay();
-  showToast('6-Part English template applied (Grammar \u2192 Comprehension)!');
-  return headings.length;
-}
-
 function saveApiKey() {
   var k = document.getElementById('ai-api-key');
   if (!k) return;
@@ -4823,20 +4789,16 @@ function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
   }
   var answerMap = parseAnswerKey(split.answerKeyText);
 
-  var loaded = [];
-  var addedQ = 0;
+  if (qBlocks.length > count) qBlocks = qBlocks.slice(0, count); // never load more than exactly commanded
+
+  var loaded    = [];  // full list incl. heading entries — goes into Exam Creator
+  var loadedQOnly = []; // real questions only — shown in this preview panel
   for (var i = 0; i < qBlocks.length; i++) {
-    var b      = qBlocks[i];
-    var uid    = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
-    // PART / STORY headings are kept verbatim as heading items (never counted as questions)
-    if (b.heading) {
-      loaded.push({ id: uid, type: 'heading', text: b.text, image: null, marks: 0, part: b.part || '', story: b.story || '' });
-      continue;
-    }
-    if (addedQ >= count) continue; // never load more than exactly commanded
-    addedQ++;
+    var b = qBlocks[i];
+    if (b.headings) loaded = loaded.concat(buildHeadingEntries(b.headings, Date.now() + i * 1000));
     var parsed = splitQuestionAndOptions(b.text);
-    var q      = { id: uid, text: parsed.question, image: null, part: b.part || '', story: b.story || '' };
+    var uid    = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
+    var q      = { id: uid, text: parsed.question, image: null };
 
     if (parsed.options) {
       q.type = 'mcq';
@@ -4856,18 +4818,23 @@ function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
       q.answer = answerMap[b.num] || '';
     }
     loaded.push(q);
+    loadedQOnly.push(q);
   }
 
-  generatedQuestions = loaded;
+  generatedQuestions = loadedQOnly;
   renderGeneratedQuestions();
   if (rc) rc.style.display = 'block';
 
-  var msg = 'Loaded ' + loaded.length + ' question(s) exactly as pasted (verbatim copy — no AI used).';
-  if (loaded.length < count) {
-    msg += ' Only ' + loaded.length + ' numbered question(s) were found in the pasted text (you asked for ' + count + ').';
+  // Connected: verbatim-loaded questions (and any PART/STORY section headings found in the
+  // pasted text) go straight into Exam Creator, which then opens automatically.
+  addQuestionsToExam(loaded, true);
+
+  var msg = 'Loaded ' + loadedQOnly.length + ' question(s) exactly as pasted (verbatim copy — no AI used) — now showing in Exam Creator.';
+  if (loadedQOnly.length < count) {
+    msg += ' Only ' + loadedQOnly.length + ' numbered question(s) were found in the pasted text (you asked for ' + count + ').';
   }
   setAIStatus(msg, '#2ecc71');
-  showToast('Verbatim copy: ' + loaded.length + ' question(s) loaded exactly as pasted!');
+  showToast('Verbatim copy: ' + loadedQOnly.length + ' question(s) loaded exactly as pasted!');
 }
 
 function doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temperature) {
@@ -5031,8 +4998,10 @@ function finishGeneration(qs) {
   generatedQuestions = qs;
   setAIProgress(100, 'Done! ' + qs.length + ' questions generated.');
   setTimeout(function() { if (pw) pw.style.display = 'none'; }, 1800);
-  setAIStatus('Successfully generated ' + qs.length + ' questions!', '#2ecc71');
+  setAIStatus('Successfully generated ' + qs.length + ' questions — now showing in Exam Creator.', '#2ecc71');
   renderGeneratedQuestions();
+  // Connected: AI-generated questions go straight into Exam Creator, which then opens automatically.
+  addQuestionsToExam(qs, true);
 }
 
 function errorGeneration(err) {
@@ -5153,15 +5122,19 @@ function splitQuestionsAndAnswerKey(raw) {
 }
 
 // Break the questions section into blocks keyed by leading "N." question number.
-// Also detects "PART N: TITLE" and "STORY N" headings (MTC 6-part English papers)
-// and emits them as heading blocks in order, tagging each question with its part/story.
+// Also recognizes multi-part exam papers — lines like "PART 1: GRAMMAR" or "STORY 2" —
+// and attaches them (verbatim, including any passage text under a STORY heading) to the
+// block of the next numbered question, so a full multi-part paper (e.g. Grammar → Spellings
+// → Punctuation → Word Meaning → Sentence Order → Comprehension with Story 1/2/3) loads with
+// its section headings and comprehension passages intact.
 function extractNumberedBlocks(text) {
   var lines = text.replace(/\r\n/g, '\n').split('\n');
   var blocks = [];
   var current = null;
-  var curPart = '';
-  var curStory = '';
-  var reStart = /^\s*(\d{1,3})\.\s*(.*)$/;
+  var pendingHeadings = []; // [{label, bodyLines}] — headings/passages seen since the last block
+  var reStart   = /^\s*(\d{1,3})\.(?!\d)\s*(.*)$/;
+  var reHeading = /^\s*(?:PART|SECTION)\s+([0-9]+|[IVXLC]+)\b.*$/i;
+  var reStory   = /^\s*STORY\s+([0-9]+)\b.*$/i;
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     var t = line.trim();
@@ -5170,45 +5143,58 @@ function extractNumberedBlocks(text) {
     if (/^QUESTIONS?$/i.test(t) || /^END OF QUESTION PAPER$/i.test(t)) continue; // section headers
     if (/COPY EXACTLY.*QUESTIONS/i.test(t)) continue;                // instruction line at top of paper
 
-    // --- PART heading (e.g. "PART 1: GRAMMAR") ---
-    var pm = t.match(MTC_PART_HEADING_RE);
-    if (pm) {
-      if (current) blocks.push(current);
-      current = null;
-      curPart = pm[1];
-      curStory = '';
-      blocks.push({ heading: true, headingText: t, part: curPart, story: '', lines: [t], text: t });
-      continue;
-    }
-    // --- STORY heading (e.g. "STORY 1") ---
-    var sm = t.match(MTC_STORY_HEADING_RE);
-    if (sm) {
-      if (current) blocks.push(current);
-      current = null;
-      curStory = sm[1];
-      // Story heading block also captures the reading passage that follows (verbatim)
-      blocks.push({ heading: true, headingText: t, part: curPart, story: curStory, lines: [t], passage: [], text: t });
+    if (reHeading.test(t) || reStory.test(t)) {
+      if (current) { blocks.push(current); current = null; } // finalize the previous block first
+      pendingHeadings.push({ label: t, bodyLines: [] }); // stored verbatim, exact case/spelling
       continue;
     }
 
     var m = line.match(reStart);
     if (m) {
       if (current) blocks.push(current);
-      current = { num: m[1], lines: [m[2]], part: curPart, story: curStory };
+      current = { num: m[1], lines: [m[2]] };
+      if (pendingHeadings.length) { current.headings = pendingHeadings; pendingHeadings = []; }
     } else if (current) {
       current.lines.push(line);
-    } else if (blocks.length && blocks[blocks.length - 1].heading && blocks[blocks.length - 1].story) {
-      // Story passage lines (unnumbered) after a STORY heading are appended verbatim
-      blocks[blocks.length - 1].lines.push(line);
-      blocks[blocks.length - 1].passage.push(line);
-      blocks[blocks.length - 1].text = blocks[blocks.length - 1].lines.join('\n');
+    } else if (pendingHeadings.length) {
+      // Body text under the most recent heading (e.g. a comprehension passage that sits
+      // between "STORY 1" and its first question) — captured verbatim, not summarized.
+      pendingHeadings[pendingHeadings.length - 1].bodyLines.push(line);
     }
   }
   if (current) blocks.push(current);
-  for (var j = 0; j < blocks.length; j++) {
-    if (blocks[j].text === undefined) blocks[j].text = blocks[j].lines.join('\n');
-  }
+  for (var j = 0; j < blocks.length; j++) blocks[j].text = blocks[j].lines.join('\n');
   return blocks;
+}
+
+// Turn a block's captured heading(s)/passage(s) into 'heading' question entries
+// (rendered as section banners in Exam Creator, never counted as real questions).
+function buildHeadingEntries(headings, seedId) {
+  var out = [];
+  if (!headings) return out;
+  for (var h = 0; h < headings.length; h++) {
+    var hd = headings[h];
+    var txt = hd.label;
+    if (hd.bodyLines && hd.bodyLines.length) {
+      var body = hd.bodyLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      if (body) txt += '\n\n' + body;
+    }
+    out.push({ id: seedId + h, type: 'heading', text: txt, marks: 0, image: null });
+  }
+  return out;
+}
+
+// Push a freshly-parsed/generated batch of questions into Exam Creator and switch to it,
+// so the AI Generator / Paste Exact Questions tools stay connected to the Exam Creator —
+// generating or verbatim-loading questions makes them appear there immediately.
+function addQuestionsToExam(list, goToCreator) {
+  if (!list || !list.length) return;
+  for (var i = 0; i < list.length; i++) {
+    examState.questions.push(JSON.parse(JSON.stringify(list[i])));
+  }
+  renderQuestions();
+  updateHeaderDisplay();
+  if (goToCreator) switchTab('creator');
 }
 
 // Within one question block, separate the question stem from A/B/C/D options (if present).
@@ -5235,20 +5221,23 @@ function splitQuestionAndOptions(blockText) {
 }
 
 // Parse the "ANSWER KEY" section into { "1": "B", "2": "B", ... }.
+// Accepts "1. B", "1) B", "1: B" and "1-B" (dash-separated, e.g. "46 D" / "46-D") — different
+// exam papers format their key differently, and this loads any of them verbatim.
 // Tolerates a missing leading number on the first line (source papers sometimes lose it in copy/paste)
 // by inferring it from the running sequence.
 function parseAnswerKey(text) {
   var map = {};
   if (!text) return map;
   var lines = text.replace(/\r\n/g, '\n').split('\n');
-  var reNum   = /^\s*(\d{1,3})\.\s*(.+?)\s*$/;
-  var reNoNum = /^\s*\.\s*(.+?)\s*$/;
+  var reNum   = /^\s*(\d{1,3})\s*[.\-:)]\s*(.+?)\s*$/;
+  var reNumSp = /^\s*(\d{1,3})\s+(.+?)\s*$/; // fallback: "46 D" with only a space as separator
+  var reNoNum = /^\s*[.\-:)]\s*(.+?)\s*$/;
   var nextExpected = 1;
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     if (!line.trim()) continue;
     if (/^\s*ANSWER\s*(KEY)?\s*$/i.test(line.trim())) continue;
-    var m = line.match(reNum);
+    var m = line.match(reNum) || line.match(reNumSp);
     if (m) { map[m[1]] = m[2]; nextExpected = parseInt(m[1], 10) + 1; continue; }
     var m2 = line.match(reNoNum);
     if (m2) { map[String(nextExpected)] = m2[1]; nextExpected++; }
@@ -5268,20 +5257,17 @@ function parseExactQuestions() {
   }
   var answerMap = parseAnswerKey(split.answerKeyText);
 
-  var loaded = [];
+  var loaded = [];          // full list, incl. heading entries — this is what goes into Exam Creator
+  var loadedQOnly = [];     // real questions only — shown in the AI-results preview panel below
   var needsAnswerReview = [];
   var needsAttachment = [];
 
   for (var i = 0; i < qBlocks.length; i++) {
     var b = qBlocks[i];
-    var uid = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
-    // PART / STORY headings are kept verbatim as heading items
-    if (b.heading) {
-      loaded.push({ id: uid, type: 'heading', text: b.text, image: null, marks: 0, part: b.part || '', story: b.story || '' });
-      continue;
-    }
+    if (b.headings) loaded = loaded.concat(buildHeadingEntries(b.headings, Date.now() + i * 1000));
     var parsed = splitQuestionAndOptions(b.text);
-    var q = { id: uid, text: parsed.question, image: null, marks: 1, part: b.part || '', story: b.story || '' };
+    var uid = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
+    var q = { id: uid, text: parsed.question, image: null, marks: 1 };
 
     if (/\[DIAGRAM|\[TABLE/i.test(parsed.question)) needsAttachment.push(b.num);
 
@@ -5307,14 +5293,22 @@ function parseExactQuestions() {
       q.answer = answerMap[b.num] || '';
     }
     loaded.push(q);
+    loadedQOnly.push(q);
   }
 
-  generatedQuestions = generatedQuestions.concat(loaded);
+  generatedQuestions = generatedQuestions.concat(loadedQOnly);
   renderGeneratedQuestions();
   var rc = document.getElementById('ai-results-card');
   if (rc) rc.style.display = 'block';
 
-  var msg = 'Loaded ' + loaded.length + ' question(s) exactly as pasted.';
+  // Connected: verbatim-loaded questions (and any PART/STORY section headings found in the
+  // pasted text) go straight into Exam Creator, which then opens automatically.
+  addQuestionsToExam(loaded, true);
+
+  var msg = 'Loaded ' + loadedQOnly.length + ' question(s) exactly as pasted';
+  var headingCount = loaded.length - loadedQOnly.length;
+  if (headingCount > 0) msg += ' with ' + headingCount + ' section heading(s)';
+  msg += ' — now showing in Exam Creator.';
   if (needsAttachment.length) msg += ' Q' + needsAttachment.join(', Q') + ' reference a diagram/table you\'ll need to attach manually.';
   if (needsAnswerReview.length) msg += ' Answer needs review for Q' + needsAnswerReview.join(', Q') + ' — defaulted to A.';
   setPasteExactStatus(msg, (needsAnswerReview.length || needsAttachment.length) ? '#e0b030' : '#2ecc71');
@@ -5332,13 +5326,6 @@ function renderGeneratedQuestions() {
   var html = '';
   for (var i = 0; i < generatedQuestions.length; i++) {
     var q = generatedQuestions[i];
-    if (q.type === 'heading') {
-      html += '<div style="background:linear-gradient(135deg,rgba(201,162,39,0.18),rgba(201,162,39,0.05));border:1px solid rgba(201,162,39,0.45);border-left:6px solid var(--gold);border-radius:9px;padding:12px 16px;margin-bottom:10px;">';
-      html += '<div style="font-size:0.95rem;font-weight:800;color:var(--gold);letter-spacing:0.5px;white-space:pre-wrap;line-height:1.55;">' + safeQHtml(q.text) + '</div>';
-      html += '<div style="font-size:0.75rem;color:#8899cc;margin-top:4px;">&#128214; Section heading \u2014 included verbatim in Copy All &amp; the exam.</div>';
-      html += '</div>';
-      continue;
-    }
     var badge = q.type === 'mcq' ? 'MCQ' : q.type === 'short' ? 'Short Answer' : 'Essay';
     var bi = i; // capture for onclick
     html += '<div style="background:rgba(8,18,54,0.6);border:1px solid rgba(201,162,39,0.22);border-radius:9px;padding:14px;margin-bottom:10px;">';
@@ -5415,16 +5402,9 @@ function clearGenerated() {
 function copyAllGenerated() {
   if (generatedQuestions.length === 0) { showToast('No questions to copy!'); return; }
   var lines = [];
-  var qn = 0;
   for (var i = 0; i < generatedQuestions.length; i++) {
     var q = generatedQuestions[i];
-    if (q.type === 'heading') {
-      lines.push(q.text);
-      lines.push('');
-      continue;
-    }
-    qn++;
-    lines.push(qn + '. ' + q.text);
+    lines.push((i+1) + '. ' + q.text);
     if (q.type === 'mcq' && q.options) {
       for (var j = 0; j < q.options.length; j++) {
         if (q.options[j].text) lines.push('   ' + q.options[j].label + '. ' + q.options[j].text);
@@ -5902,11 +5882,18 @@ function teSelectExam(subj, examIdx) {
   var bank = getBankData();
   if (!bank[subj] || !bank[subj][examIdx]) { showToast('Exam not found in bank!'); return; }
   var entry = bank[subj][examIdx];
+  var allQ = entry.questions || [];
+  // "questions" stays the real, scored question list (headings excluded) so timing, progress,
+  // answer-saving and auto-grading are completely unaffected. "displayItems" is the full list
+  // including PART/STORY section headings, used only to render the exam in the right order
+  // with its section banners and comprehension passages visible to the student.
+  var teQuestions = allQ.filter(function(q) { return q.type !== 'heading'; });
   teState.exam = {
-    settings:  entry.settings  || {},
-    questions: entry.questions || [],
-    subject:   subj,
-    title:     entry.title || 'Exam'
+    settings:     entry.settings || {},
+    questions:    teQuestions,
+    displayItems: allQ,
+    subject:      subj,
+    title:        entry.title || 'Exam'
   };
 
   // ── Image enrichment: bank may have stripped images to save storage space.
@@ -5992,13 +5979,18 @@ function teStartExam() {
 function teRenderQuestions() {
   var wrap = document.getElementById('te-questions-wrap');
   if (!wrap) return;
-  var qs = teState.exam.questions;
+  var items  = teState.exam.displayItems || teState.exam.questions;
+  var ranges = teComputePartRanges(items);
   var html = '';
-  var tn = 0;
-  for (var i = 0; i < qs.length; i++) {
-    if (qs[i].type === 'heading') { html += teBuildQ(qs[i], -1); continue; }
-    html += teBuildQ(qs[i], tn);
-    tn++;
+  var dispNum = 0;
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    if (it.type === 'heading') {
+      html += teBuildHeading(it, ranges[i]);
+    } else {
+      dispNum++;
+      html += teBuildQ(it, dispNum - 1);
+    }
   }
   wrap.innerHTML = html;
 
@@ -6030,14 +6022,54 @@ function teRenderQuestions() {
   });
 }
 
+// For each "PART N: ..." heading, work out which question numbers fall under it (e.g. "1-15")
+// by looking ahead to the next heading. STORY headings, and a PART heading immediately
+// followed by another heading (e.g. "PART 6: COMPREHENSION" right before "STORY 1"), get no
+// number range — matching a paper where the part itself has no directly-numbered questions.
+function teComputePartRanges(items) {
+  var ranges  = new Array(items.length).fill(null);
+  var dispNum = 0;
+  var dispNums = [];
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type !== 'heading') { dispNum++; dispNums.push(dispNum); }
+    else dispNums.push(null);
+  }
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type === 'heading' && /^PART\b/i.test(String(items[i].text || '').trim())) {
+      var start = null, end = null;
+      for (var j = i + 1; j < items.length; j++) {
+        if (items[j].type === 'heading') break;
+        if (dispNums[j] !== null) { if (start === null) start = dispNums[j]; end = dispNums[j]; }
+      }
+      if (start !== null) ranges[i] = (start === end) ? String(start) : (start + '-' + end);
+    }
+  }
+  return ranges;
+}
+
+// Render a PART heading banner or a STORY/comprehension passage card.
+function teBuildHeading(q, rangeSuffix) {
+  var lines = String(q.text || '').split('\n');
+  var label = lines[0];
+  var body  = lines.slice(1).join('\n').replace(/^\n+/, '').trim();
+  var isStory = /^STORY\b/i.test(label.trim());
+
+  if (isStory || body) {
+    var hs = '<div style="background:linear-gradient(135deg,rgba(201,162,39,0.10),rgba(201,162,39,0.03));border:1.5px solid rgba(201,162,39,0.5);border-radius:10px;padding:14px 18px;margin:20px 0 16px;">';
+    hs += '<div style="color:var(--gold);font-weight:800;font-size:0.95rem;margin-bottom:' + (body ? '8px' : '0') + ';">' + escHtml(label) + (body ? ':' : '') + '</div>';
+    if (body) hs += '<div style="color:var(--gold-light);font-weight:600;font-size:0.86rem;line-height:1.65;white-space:pre-wrap;">' + safeQHtml(body) + '</div>';
+    hs += '</div>';
+    return hs;
+  }
+
+  var hp = '<div style="background:linear-gradient(135deg,rgba(201,162,39,0.14),rgba(201,162,39,0.03));border:1.5px solid rgba(201,162,39,0.55);border-radius:10px;padding:12px 18px;margin:24px 0 16px;">';
+  hp += '<div style="color:var(--gold);font-weight:800;font-size:1rem;letter-spacing:0.02em;">' + escHtml(label) + (rangeSuffix ? ' ' + rangeSuffix : '') + '</div>';
+  hp += '</div>';
+  return hp;
+}
+
 function teBuildQ(q, idx) {
   var typeName = q.type === 'mcq' ? 'MCQ' : q.type === 'short' ? 'Short Answer' : 'Essay';
-  if (q.type === 'heading') {
-    var hh = '<div class="question-block part-heading" style="background:linear-gradient(135deg,rgba(201,162,39,0.16),rgba(201,162,39,0.05));border:1px solid rgba(201,162,39,0.4);border-left:6px solid var(--gold);border-radius:9px;padding:12px 16px;margin-bottom:12px;">';
-    hh += '<div style="font-size:0.95rem;font-weight:800;color:var(--gold);letter-spacing:0.5px;white-space:pre-wrap;line-height:1.55;">' + safeQHtml(q.text || '') + '</div>';
-    hh += '</div>';
-    return hh;
-  }
   var h = '';
   h += '<div class="question-block" id="te-qb-' + q.id + '">';
   h += '<div class="q-header">';
@@ -8038,7 +8070,7 @@ function cloudBuildWAMsg(s, code, url, pin) {
   if (s.grade)   msg += '🎓 *Class:* '   + s.grade   + '\n';
   if (s.term)    msg += '📅 *Term:* '    + s.term + ' ' + (s.year || '') + '\n';
   msg += '⏱ *Duration:* ' + (s.duration || 60) + ' minutes\n';
-  msg += '❓ *Questions:* ' + examState.questions.length + '\n\n';
+  msg += '❓ *Questions:* ' + examState.questions.filter(function(q){ return q.type !== 'heading'; }).length + '\n\n';
   msg += '🔗 *EXAM LINK:*\n' + url + '\n\n';
   msg += '🔑 *Exam Code:* *' + code + '*\n';
   if (pin) msg += '🔒 *PIN:* *' + pin + '*\n';
