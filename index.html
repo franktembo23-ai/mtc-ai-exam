@@ -4810,12 +4810,12 @@ function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
         { label: 'D', text: parsed.options.D || '', image: null }
       ];
       q.explanation = '';
-      var ans = answerMap[b.num];
+      var ans = b.inlineAnswer || answerMap[b.num]; // prefer an answer stated right under the question
       q.correct = (ans && /^[ABCD]$/i.test(ans.trim())) ? ans.trim().toUpperCase() : 'A';
     } else {
       q.type  = 'short';
       q.marks = longM;
-      q.answer = answerMap[b.num] || '';
+      q.answer = b.inlineAnswer || answerMap[b.num] || '';
     }
     loaded.push(q);
     loadedQOnly.push(q);
@@ -5111,9 +5111,14 @@ function splitQuestionsAndAnswerKey(raw) {
   var keyStart = -1;
   for (var i = 0; i < lines.length; i++) {
     var t = lines[i].trim();
-    // Accepts "ANSWER KEY", "Answer key:", "ANSWERS:", "ANSWER" + "KEY" on two lines — with or without a trailing colon.
-    if (/^ANSWER\s*KEYS?\s*:?\s*$/i.test(t)) { keyStart = i; break; }
-    if (/^ANSWER\s*:?\s*$/i.test(t) && lines[i + 1] && /^KEYS?\s*:?\s*$/i.test(lines[i + 1].trim())) { keyStart = i; break; }
+    // Accepts "ANSWER KEY", "Answer key:", "Answer Key 2010" (year/extra text after it),
+    // "ANSWERS:", "MARKING SCHEME", "SOLUTIONS", "MEMO(RANDUM)", or "ANSWER" + "KEY" on two
+    // separate lines — the header just needs to START with one of these, so any trailing
+    // text (a year, "- Paper 1", a colon, etc.) doesn't stop it from being recognized.
+    if (/^ANSWER\s*KEYS?\b/i.test(t)) { keyStart = i; break; }
+    if (/^ANSWERS?\s*:?\s*$/i.test(t)) { keyStart = i; break; }
+    if (/^(MARKING\s*SCHEME|SOLUTIONS?|MEMO(RANDUM)?)\b/i.test(t)) { keyStart = i; break; }
+    if (/^ANSWER\s*:?\s*$/i.test(t) && lines[i + 1] && /^KEYS?\b/i.test(lines[i + 1].trim())) { keyStart = i; break; }
   }
   if (keyStart === -1) return { questionsText: raw, answerKeyText: '' };
   return {
@@ -5127,6 +5132,9 @@ function splitQuestionsAndAnswerKey(raw) {
 // (number + at least one space, no punctuation). A period is never treated as a number
 // separator when followed by another digit, so decimals like "3.14" inside question text are
 // left alone.
+// Also recognizes an answer stated INLINE right under a question (e.g. "Answer : C",
+// "Answer: A", "Answer C") instead of in a separate answer key section — this is captured as
+// that block's answer directly and kept out of the question/option text.
 // Also recognizes multi-part exam papers — lines like "PART 1: GRAMMAR" or "STORY 2" —
 // and attaches them (verbatim, including any passage text under a STORY heading) to the
 // block of the next numbered question, so a full multi-part paper (e.g. Grammar → Spellings
@@ -5137,9 +5145,10 @@ function extractNumberedBlocks(text) {
   var blocks = [];
   var current = null;
   var pendingHeadings = []; // [{label, bodyLines}] — headings/passages seen since the last block
-  var reStart   = /^\s*(\d{1,3})(?:\.(?!\d)\s*|[\):]\s*|\s+)(\S[\s\S]*)$/;
-  var reHeading = /^\s*(?:PART|SECTION)\s+([0-9]+|[IVXLC]+)\b.*$/i;
-  var reStory   = /^\s*STORY\s+([0-9]+)\b.*$/i;
+  var reStart      = /^\s*(\d{1,3})(?:\.(?!\d)\s*|[\):]\s*|\s+)(\S[\s\S]*)$/;
+  var reHeading     = /^\s*(?:PART|SECTION)\s+([0-9]+|[IVXLC]+)\b.*$/i;
+  var reStory       = /^\s*STORY\s+([0-9]+)\b.*$/i;
+  var reInlineAns   = /^\s*ANSWER\s*:?\s*([A-Da-d])\s*[.\)]?\s*$/i;
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     var t = line.trim();
@@ -5151,6 +5160,12 @@ function extractNumberedBlocks(text) {
     if (reHeading.test(t) || reStory.test(t)) {
       if (current) { blocks.push(current); current = null; } // finalize the previous block first
       pendingHeadings.push({ label: t, bodyLines: [] }); // stored verbatim, exact case/spelling
+      continue;
+    }
+
+    var am = t.match(reInlineAns);
+    if (am && current) {
+      current.inlineAnswer = am[1].toUpperCase(); // captured, NOT added to the question/option text
       continue;
     }
 
@@ -5288,7 +5303,7 @@ function parseAnswerKey(text) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     if (!line.trim()) continue;
-    if (/^\s*ANSWER\s*(KEYS?)?\s*:?\s*$/i.test(line.trim())) continue;
+    if (/^\s*(ANSWER\s*KEYS?|ANSWERS?|MARKING\s*SCHEME|SOLUTIONS?|MEMO(RANDUM)?)\b.*$/i.test(line.trim())) continue;
     var m = line.match(reNum) || line.match(reNumSp);
     if (m) { map[m[1]] = m[2]; nextExpected = parseInt(m[1], 10) + 1; continue; }
     var m2 = line.match(reNoNum);
@@ -5332,7 +5347,7 @@ function parseExactQuestions() {
         { label: 'D', text: parsed.options.D || '', image: null }
       ];
       q.explanation = '';
-      var ans = answerMap[b.num];
+      var ans = b.inlineAnswer || answerMap[b.num]; // prefer an answer stated right under the question
       if (ans && /^[ABCD]$/i.test(ans.trim())) {
         q.correct = ans.trim().toUpperCase();
       } else {
@@ -5342,7 +5357,7 @@ function parseExactQuestions() {
     } else {
       // No A-D options found - keep as Short Answer so the text is preserved rather than dropped or reworded.
       q.type = 'short';
-      q.answer = answerMap[b.num] || '';
+      q.answer = b.inlineAnswer || answerMap[b.num] || '';
     }
     loaded.push(q);
     loadedQOnly.push(q);
