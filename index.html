@@ -2861,6 +2861,31 @@ migrateLStoIDB(function() {
 var bankAutoSyncOn = false;
 var bankAutoSyncListener = null;
 
+// ── Deletion tombstones ─────────────────────────────────────
+// Records exam IDs deleted locally so a cloud-sync merge (manual or the live auto-sync
+// listener) never resurrects one that's mid-flight being removed from the cloud — this is
+// what was causing deleted exams in the Exam Bank to reappear. Entries are pruned after 90
+// days so this list can't grow forever.
+function bankGetTombstones() {
+  try { return JSON.parse(localStorage.getItem('mtc_deleted_exam_ids') || '[]'); } catch(e) { return []; }
+}
+function bankAddTombstone(id) {
+  if (!id) return;
+  try {
+    var list = bankGetTombstones();
+    list.push({ id: String(id), at: Date.now() });
+    var cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    list = list.filter(function(t) { return t.at >= cutoff; });
+    localStorage.setItem('mtc_deleted_exam_ids', JSON.stringify(list));
+  } catch(e) {}
+}
+function bankIsTombstoned(id) {
+  var list = bankGetTombstones();
+  var idStr = String(id);
+  for (var i = 0; i < list.length; i++) { if (list[i].id === idStr) return true; }
+  return false;
+}
+
 function bankSyncSafeKey(s) {
   // Firebase RTDB keys cannot contain . # $ [ ] /
   return String(s || 'General').replace(/[.#$\[\]\/]/g, '_');
@@ -2873,11 +2898,16 @@ function bankUpdateSyncStatusBar(text, ok) {
   if (statusEl) statusEl.textContent = text;
 }
 
-// Push local bank changes to the cloud (additive) and remove cloud entries
-// for anything that was deleted locally. Silently does nothing if offline.
+// Push local bank changes to the cloud (additive) and remove cloud entries for anything
+// that was deleted locally. All sets AND removes are sent as ONE atomic multi-path update()
+// call, so the live cloud listener (bankAutoSyncListener/bankSyncNow) can never observe a
+// half-applied state where a just-deleted exam still looks "present" — which is what was
+// letting deleted exams get pulled back in and reappear in the Exam Bank.
+// Silently does nothing if offline.
 function bankSyncPushChanges(oldBank, newBank) {
   if (!cloudDB) return;
 
+  var updates = {};
   var newSubjects = Object.keys(newBank);
   for (var i = 0; i < newSubjects.length; i++) {
     var subj = newSubjects[i];
@@ -2885,7 +2915,7 @@ function bankSyncPushChanges(oldBank, newBank) {
     for (var j = 0; j < exams.length; j++) {
       var ex = exams[j];
       if (ex && ex.id) {
-        try { cloudDB.ref('mtc_bank_sync/' + bankSyncSafeKey(subj) + '/' + ex.id).set(ex); } catch(e) {}
+        updates['mtc_bank_sync/' + bankSyncSafeKey(subj) + '/' + ex.id] = ex;
       }
     }
   }
@@ -2906,12 +2936,15 @@ function bankSyncPushChanges(oldBank, newBank) {
       if (nexams[nj] && nexams[nj].id) newIds[nexams[nj].id] = true;
     }
   }
-  var deletedIds = Object.keys(oldIds).filter(function(id){ return !newIds[id]; });
+  var deletedIds = Object.keys(oldIds).filter(function(id) { return !newIds[id]; });
   for (var di = 0; di < deletedIds.length; di++) {
     var delId = deletedIds[di];
     var delSubj = oldIds[delId];
-    try { cloudDB.ref('mtc_bank_sync/' + bankSyncSafeKey(delSubj) + '/' + delId).remove(); } catch(e) {}
+    updates['mtc_bank_sync/' + bankSyncSafeKey(delSubj) + '/' + delId] = null; // null = atomic delete of that path
   }
+
+  if (Object.keys(updates).length === 0) return;
+  try { cloudDB.ref().update(updates); } catch(e) {}
 }
 
 // Manual full sync — pulls every exam from the cloud and merges any that
@@ -2944,6 +2977,7 @@ function bankSyncNow() {
       for (var ek = 0; ek < examKeys.length; ek++) {
         var cloudExam = cloudExams[examKeys[ek]];
         if (!cloudExam || !cloudExam.id) continue;
+        if (bankIsTombstoned(cloudExam.id)) continue; // was just deleted locally — don't resurrect it
         var idStr = String(cloudExam.id);
         if (localIdxById.hasOwnProperty(idStr) || localIdxById.hasOwnProperty(cloudExam.id)) {
           var idx = localIdxById.hasOwnProperty(idStr) ? localIdxById[idStr] : localIdxById[cloudExam.id];
@@ -3143,6 +3177,10 @@ function deleteSubject(subj) {
   var bank = getBankData();
   var count = (bank[subj]||[]).length;
   openModal('Delete Subject', '<p style="color:#d4e0ff;">Delete all ' + count + ' exam(s) in "<strong>' + subj + '</strong>"? This cannot be undone.</p>', function() {
+    var removedExams = bank[subj] || [];
+    for (var ri = 0; ri < removedExams.length; ri++) {
+      if (removedExams[ri] && removedExams[ri].id) bankAddTombstone(removedExams[ri].id);
+    }
     delete bank[subj]; saveBankData(bank); closeModal(); renderBank();
     showToast('Subject "' + subj + '" deleted');
   }, 'Delete Subject');
@@ -3152,7 +3190,9 @@ function deleteExamFromBank(subj, idx) {
   var bank = getBankData();
   if (!bank[subj]) return;
   var name = bank[subj][idx].title;
+  var examId = bank[subj][idx].id;
   openModal('Delete Exam', '<p style="color:#d4e0ff;">Delete exam "<strong>' + name + '</strong>"?</p>', function() {
+    bankAddTombstone(examId); // guards against the cloud sync bringing this exam back
     bank[subj].splice(idx,1);
     if (bank[subj].length === 0) delete bank[subj];
     saveBankData(bank); closeModal(); renderBank();
