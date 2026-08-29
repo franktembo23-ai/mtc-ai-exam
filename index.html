@@ -999,6 +999,15 @@ select option { background: #ffffff; color: #1a2744; }
     <div style="font-size:0.82rem; color:#8899cc; margin-bottom:8px; line-height:1.5;">
       Paste a full numbered question paper — e.g. "1. Question text... A. ... B. ... C. ... D. ..." — with an optional
       "ANSWER KEY" section at the end. Questions are loaded exactly as typed; nothing is regenerated or reworded.
+      Have diagrams? Upload the .docx directly below instead of pasting — every diagram loads and attaches to its
+      question automatically, all at once, instead of uploading each one by hand.
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; align-items:center;">
+      <button class="btn btn-navy btn-sm" onclick="document.getElementById('pe-doc-upload').click()">&#128196; Upload .docx (with diagrams)</button>
+      <input type="file" id="pe-doc-upload" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="pasteExactHandleDocUpload(this)">
+    </div>
+    <div id="pe-upload-status" style="display:none; background:#f5f7ff; border:1px solid #c5cde8; border-radius:8px; padding:10px 12px; margin-bottom:8px; font-size:0.82rem;">
+      <div id="pe-upload-info" style="color:#1a2744; font-weight:600;"></div>
     </div>
     <textarea id="paste-exact-content" rows="12" placeholder="Paste the full question paper here, including the answer key section if you have one..."></textarea>
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
@@ -5308,6 +5317,19 @@ function setAIProgress(pct, label) {
 
 // Detect an explicit "just copy this / don't reword it" instruction in free-text fields,
 // so typing that intent (instead of, or in addition to, ticking the checkbox) also works.
+// aiHandleDocUpload() copies the extracted doc text straight into the pasted-content
+// textarea (so it's visible/editable), which means naively concatenating aiDocContent +
+// the textarea's value would duplicate everything — doubling every question (and every
+// attached diagram) once parsed. This merges them without ever duplicating.
+function mergeDocAndPastedContent(pasted) {
+  pasted = pasted || '';
+  if (!aiDocContent) return pasted.trim();
+  if (pasted.indexOf(aiDocContent.trim()) !== -1) return pasted.trim(); // already contains it
+  var merged = aiDocContent;
+  if (pasted && pasted.trim()) merged += '\n\n' + pasted.trim();
+  return merged;
+}
+
 function detectVerbatimIntent(text) {
   if (!text) return false;
   return /\b(copy\s*(it|them)?\s*exactly|copy\s*verbatim|verbatim|word[\s-]for[\s-]word|do\s*not\s*reword|don't\s*reword|don't\s*re-word|no\s*rewording|without\s*rewording|exact(ly)?\s*as\s*(pasted|written|typed|given)|keep\s*(it|them)?\s*exact(ly)?|as[\s-]is|do\s*not\s*change\s*(the\s*)?wording|don't\s*change\s*(the\s*)?wording|leave\s*(it|them)?\s*unchanged|unchanged|no\s*ai\s*rewording|just\s*copy|copy\s*(the\s*)?(pasted\s*)?questions?\s*(exactly)?)\b/i.test(text);
@@ -5337,9 +5359,7 @@ function generateWithAI() {
   var verbatimBox   = document.getElementById('ai-verbatim-copy');
   var wantsVerbatim = (verbatimBox && verbatimBox.checked) || detectVerbatimIntent(extra) || detectVerbatimIntent(topic);
   if (wantsVerbatim) {
-    var fullContentV = '';
-    if (aiDocContent) fullContentV += aiDocContent + '\n\n';
-    if (pasted && pasted.trim()) fullContentV += pasted.trim();
+    var fullContentV = mergeDocAndPastedContent(pasted);
     runVerbatimCopyFromAITab(fullContentV, count, mcqM, longM);
     return;
   }
@@ -5404,21 +5424,35 @@ function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
 
   var loaded    = [];  // full list incl. heading entries — goes into Exam Creator
   var loadedQOnly = []; // real questions only — shown in this preview panel
+  var diagramsAttached = 0;
   for (var i = 0; i < qBlocks.length; i++) {
     var b = qBlocks[i];
     if (b.headings) loaded = loaded.concat(buildHeadingEntries(b.headings, Date.now() + i * 1000));
     var parsed = splitQuestionAndOptions(b.text);
     var uid    = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
-    var q      = { id: uid, text: parsed.question, image: null };
+
+    // A diagram extracted from an uploaded .docx shows up as a "[IMG:n]" marker exactly
+    // where it appeared in the original paper — resolve it straight to q.image here.
+    var qImg = extractImageMarker(parsed.question);
+    if (qImg.image) diagramsAttached++;
+    var q = { id: uid, text: qImg.cleanText, image: qImg.image };
 
     if (parsed.options) {
       q.type = 'mcq';
       q.marks = mcqM;
+      var optA = extractImageMarker(parsed.options.A || '');
+      var optB = extractImageMarker(parsed.options.B || '');
+      var optC = extractImageMarker(parsed.options.C || '');
+      var optD = extractImageMarker(parsed.options.D || '');
+      if (optA.image) diagramsAttached++;
+      if (optB.image) diagramsAttached++;
+      if (optC.image) diagramsAttached++;
+      if (optD.image) diagramsAttached++;
       q.options = [
-        { label: 'A', text: parsed.options.A || '', image: null },
-        { label: 'B', text: parsed.options.B || '', image: null },
-        { label: 'C', text: parsed.options.C || '', image: null },
-        { label: 'D', text: parsed.options.D || '', image: null }
+        { label: 'A', text: optA.cleanText, image: optA.image },
+        { label: 'B', text: optB.cleanText, image: optB.image },
+        { label: 'C', text: optC.cleanText, image: optC.image },
+        { label: 'D', text: optD.cleanText, image: optD.image }
       ];
       q.explanation = '';
       var ans = b.inlineAnswer || answerMap[b.num]; // prefer an answer stated right under the question
@@ -5440,19 +5474,19 @@ function runVerbatimCopyFromAITab(raw, count, mcqM, longM) {
   // pasted text) go straight into Exam Creator, which then opens automatically.
   addQuestionsToExam(loaded, true);
 
-  var msg = 'Loaded ' + loadedQOnly.length + ' question(s) exactly as pasted (verbatim copy — no AI used) — now showing in Exam Creator.';
+  var msg = 'Loaded ' + loadedQOnly.length + ' question(s) exactly as pasted (verbatim copy — no AI used)';
+  if (diagramsAttached > 0) msg += ' with ' + diagramsAttached + ' diagram(s) attached automatically';
+  msg += ' — now showing in Exam Creator.';
   if (loadedQOnly.length < count) {
     msg += ' Only ' + loadedQOnly.length + ' numbered question(s) were found in the pasted text (you asked for ' + count + ').';
   }
   setAIStatus(msg, '#2ecc71');
-  showToast('Verbatim copy: ' + loadedQOnly.length + ' question(s) loaded exactly as pasted!');
+  showToast('Verbatim copy: ' + loadedQOnly.length + ' question(s) loaded exactly as pasted!' + (diagramsAttached ? ' (' + diagramsAttached + ' diagrams)' : ''));
 }
 
 function doGeneration(key, model, qType, count, topic, diff, pasted, extra, mcqM, longM, onOk, onErr, batchStart, batchEnd, avoidTexts, temperature) {
   // Merge uploaded doc text into pasted content
-  var fullContent = '';
-  if (aiDocContent) fullContent += aiDocContent + '\n\n';
-  if (pasted && pasted.trim()) fullContent += pasted.trim();
+  var fullContent = mergeDocAndPastedContent(pasted);
 
   var prompt = buildAIPrompt(qType, count, topic, diff, fullContent, extra, mcqM, longM, batchStart, batchEnd, avoidTexts);
   var url    = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key;
@@ -5923,6 +5957,48 @@ function parseAnswerKey(text) {
   return map;
 }
 
+// ── Direct .docx upload for "Paste Exact Questions" — extracts text + diagrams
+// together and drops the result straight into the textarea, ready to Parse & Load.
+function pasteExactHandleDocUpload(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var statusEl = document.getElementById('pe-upload-status');
+  var infoEl   = document.getElementById('pe-upload-info');
+  if (statusEl) statusEl.style.display = 'block';
+  if (infoEl)   infoEl.textContent = 'Reading: ' + file.name + '...';
+
+  aiReadDocxWithImages(file, function(result) {
+    var ta = document.getElementById('paste-exact-content');
+    if (ta) ta.value = result.text || '';
+    var n = Object.keys(result.images).length;
+    if (n === 0) {
+      if (infoEl) infoEl.innerHTML = '<span style="color:#1a7a3f;">&#10003; Loaded: ' + escHtml(file.name) + '</span> &bull; <span style="color:#8899cc;">no diagrams found — plain text only</span>';
+      showToast('Document loaded: ' + file.name);
+      return;
+    }
+    infoEl.textContent = 'Extracting ' + n + ' diagram(s)...';
+    compressAndStoreVerbatimImages(result.images, function(doneCount, total) {
+      if (infoEl) infoEl.textContent = 'Extracting diagrams... ' + doneCount + ' / ' + total;
+    }, function(count) {
+      if (infoEl) infoEl.innerHTML = '<span style="color:#1a7a3f;">&#10003; Loaded: ' + escHtml(file.name) + '</span> &bull; <span style="color:#1a7a3f;">' + count + ' diagram' + (count!==1?'s':'') + ' extracted &amp; attached automatically</span>';
+      showToast('Document loaded: ' + file.name + ' (' + count + ' diagram' + (count!==1?'s':'') + ')');
+    });
+  });
+  input.value = '';
+}
+
+// Finds a "[IMG:n]" marker (left behind by aiReadDocxWithImages) in a piece of text,
+// resolves it to the actual extracted diagram, and returns the text with the marker
+// removed so it never shows up as literal text in the loaded exam.
+function extractImageMarker(text) {
+  if (!text) return { cleanText: text, image: null };
+  var m = /\[IMG:(\d+)\]/.exec(text);
+  if (!m) return { cleanText: text, image: null };
+  var image = verbatimImageMap[m[1]] || null;
+  var cleanText = text.replace(/\s*\[IMG:\d+\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return { cleanText: cleanText, image: image };
+}
+
 function parseExactQuestions() {
   var raw = document.getElementById('paste-exact-content').value;
   if (!raw || !raw.trim()) { showToast('Paste some question text first!'); return; }
@@ -5939,23 +6015,37 @@ function parseExactQuestions() {
   var loadedQOnly = [];     // real questions only — shown in the AI-results preview panel below
   var needsAnswerReview = [];
   var needsAttachment = [];
+  var diagramsAttached = 0;
 
   for (var i = 0; i < qBlocks.length; i++) {
     var b = qBlocks[i];
     if (b.headings) loaded = loaded.concat(buildHeadingEntries(b.headings, Date.now() + i * 1000));
     var parsed = splitQuestionAndOptions(b.text);
     var uid = Date.now() + i * 11 + Math.floor(Math.random() * 99999);
-    var q = { id: uid, text: parsed.question, image: null, marks: 1 };
 
-    if (/\[DIAGRAM|\[TABLE/i.test(parsed.question)) needsAttachment.push(b.num);
+    // A diagram extracted from an uploaded .docx shows up as a "[IMG:n]" marker exactly
+    // where it appeared in the original paper — resolve it straight to q.image here.
+    var qImg = extractImageMarker(parsed.question);
+    if (qImg.image) diagramsAttached++;
+    var q = { id: uid, text: qImg.cleanText, image: qImg.image, marks: 1 };
+
+    if (/\[DIAGRAM|\[TABLE/i.test(qImg.cleanText)) needsAttachment.push(b.num);
 
     if (parsed.options) {
       q.type = 'mcq';
+      var optA = extractImageMarker(parsed.options.A || '');
+      var optB = extractImageMarker(parsed.options.B || '');
+      var optC = extractImageMarker(parsed.options.C || '');
+      var optD = extractImageMarker(parsed.options.D || '');
+      if (optA.image) diagramsAttached++;
+      if (optB.image) diagramsAttached++;
+      if (optC.image) diagramsAttached++;
+      if (optD.image) diagramsAttached++;
       q.options = [
-        { label: 'A', text: parsed.options.A || '', image: null },
-        { label: 'B', text: parsed.options.B || '', image: null },
-        { label: 'C', text: parsed.options.C || '', image: null },
-        { label: 'D', text: parsed.options.D || '', image: null }
+        { label: 'A', text: optA.cleanText, image: optA.image },
+        { label: 'B', text: optB.cleanText, image: optB.image },
+        { label: 'C', text: optC.cleanText, image: optC.image },
+        { label: 'D', text: optD.cleanText, image: optD.image }
       ];
       q.explanation = '';
       var ans = b.inlineAnswer || answerMap[b.num]; // prefer an answer stated right under the question
@@ -5986,6 +6076,7 @@ function parseExactQuestions() {
   var msg = 'Loaded ' + loadedQOnly.length + ' question(s) exactly as pasted';
   var headingCount = loaded.length - loadedQOnly.length;
   if (headingCount > 0) msg += ' with ' + headingCount + ' section heading(s)';
+  if (diagramsAttached > 0) msg += ' and ' + diagramsAttached + ' diagram(s) attached automatically';
   msg += ' — now showing in Exam Creator.';
   if (needsAttachment.length) msg += ' Q' + needsAttachment.join(', Q') + ' reference a diagram/table you\'ll need to attach manually.';
   if (needsAnswerReview.length) msg += ' Answer needs review for Q' + needsAnswerReview.join(', Q') + ' — defaulted to A.';
@@ -8329,6 +8420,124 @@ function aiStripRTF(text) {
     .slice(0, 40000);
 }
 
+// Shared store for diagrams extracted from an uploaded .docx, keyed by marker index —
+// used by both AI Generator's verbatim mode and the standalone "Paste Exact Questions" tool,
+// so a 100-question paper with 100 diagrams loads with every image attached automatically
+// instead of the teacher uploading each one by hand.
+var verbatimImageMap = {};
+
+// ── DOCX → extract text AND diagrams together, in document order ──────────
+// Walks word/document.xml exactly as Word laid it out, so text and images come out in the
+// same order they appear in the paper. Each inline image becomes a short "[IMG:n]" marker
+// in the text stream at the exact spot it occurred (right after a question stem, or right
+// next to an option) — the verbatim parsers below then turn that marker straight back into
+// q.image / option.image, with no manual re-attaching needed.
+function aiReadDocxWithImages(file, onDone) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    if (typeof JSZip === 'undefined') { onDone({ text: '', images: {} }); return; }
+    JSZip.loadAsync(e.target.result).then(function(zip) {
+      var docFile  = zip.file('word/document.xml');
+      var relsFile = zip.file('word/_rels/document.xml.rels');
+      if (!docFile) { onDone({ text: '', images: {} }); return; }
+
+      Promise.all([
+        docFile.async('string'),
+        relsFile ? relsFile.async('string') : Promise.resolve('')
+      ]).then(function(results) {
+        var xml = results[0];
+        var relsXml = results[1];
+
+        var relMap = {}; // rId -> media path, e.g. "media/image1.png"
+        if (relsXml) {
+          var relDoc = new DOMParser().parseFromString(relsXml, 'text/xml');
+          var relEls = relDoc.getElementsByTagName('Relationship');
+          for (var ri = 0; ri < relEls.length; ri++) {
+            var rId = relEls[ri].getAttribute('Id');
+            var target = relEls[ri].getAttribute('Target');
+            if (rId && target) relMap[rId] = target;
+          }
+        }
+
+        var doc  = new DOMParser().parseFromString(xml, 'text/xml');
+        var body = doc.getElementsByTagName('w:body')[0];
+        if (!body) { onDone({ text: '', images: {} }); return; }
+
+        var rawImageMap = {}; // marker index -> media path (resolved to data URL below)
+        var markerCounter = 0;
+
+        function embedIdOf(drawingEl) {
+          var REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+          var blips = drawingEl.getElementsByTagName('a:blip');
+          if (blips.length) {
+            return blips[0].getAttributeNS(REL_NS, 'embed') || blips[0].getAttribute('r:embed');
+          }
+          var imgDatas = drawingEl.getElementsByTagName('v:imagedata'); // legacy VML fallback
+          if (imgDatas.length) {
+            return imgDatas[0].getAttributeNS(REL_NS, 'id') || imgDatas[0].getAttribute('r:id');
+          }
+          return null;
+        }
+
+        function walk(node, out) {
+          var children = node.childNodes;
+          for (var c = 0; c < children.length; c++) {
+            var child = children[c];
+            var tag = child.tagName;
+            if (!tag) continue;
+            if (tag === 'w:t') {
+              out.push(child.textContent || '');
+            } else if (tag === 'w:tab') {
+              out.push('\t');
+            } else if (tag === 'w:br' || tag === 'w:cr') {
+              out.push('\n');
+            } else if (tag === 'w:drawing' || tag === 'w:pict') {
+              var rEmbed = embedIdOf(child);
+              if (rEmbed && relMap[rEmbed]) {
+                var idx = markerCounter++;
+                rawImageMap[idx] = relMap[rEmbed];
+                out.push(' [IMG:' + idx + '] ');
+              }
+            } else {
+              walk(child, out); // recurse through w:r, w:hyperlink, etc.
+            }
+          }
+        }
+
+        var paragraphs = body.getElementsByTagName('w:p');
+        var lines = [];
+        for (var pi = 0; pi < paragraphs.length; pi++) {
+          var parts = [];
+          walk(paragraphs[pi], parts);
+          lines.push(parts.join(''));
+        }
+        var plainText = lines.join('\n');
+
+        var idxList = Object.keys(rawImageMap);
+        if (idxList.length === 0) { onDone({ text: plainText, images: {} }); return; }
+
+        Promise.all(idxList.map(function(idx) {
+          var path = rawImageMap[idx];
+          var fullPath = 'word/' + path.replace(/^\.?\//, '');
+          var zEntry = zip.file(fullPath);
+          if (!zEntry) return Promise.resolve(null);
+          return zEntry.async('base64').then(function(b64) {
+            var ext = (path.split('.').pop() || 'png').toLowerCase().split('?')[0];
+            var mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' :
+                       ext === 'gif' ? 'image/gif' : ext === 'bmp' ? 'image/bmp' : 'image/png';
+            return 'data:' + mime + ';base64,' + b64;
+          }).catch(function() { return null; });
+        })).then(function(dataUrls) {
+          var finalMap = {};
+          for (var k = 0; k < idxList.length; k++) { if (dataUrls[k]) finalMap[idxList[k]] = dataUrls[k]; }
+          onDone({ text: plainText, images: finalMap });
+        });
+      }).catch(function() { onDone({ text: '', images: {} }); });
+    }).catch(function() { onDone({ text: '', images: {} }); });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 // ── DOCX → extract raw XML text ──────────────────────────────
 function aiReadDocxText(file, onDone) {
   // Use FileReader to read as ArrayBuffer, then decode word/document.xml
@@ -8364,6 +8573,22 @@ function aiReadDocxText(file, onDone) {
   reader.readAsArrayBuffer(file);
 }
 
+// Compress every extracted diagram and merge into the shared verbatimImageMap, with a
+// progress callback since a 100-question paper can mean 100 images to process.
+function compressAndStoreVerbatimImages(imageMap, onProgress, onDone) {
+  var keys = Object.keys(imageMap);
+  if (keys.length === 0) { onDone(0); return; }
+  var completed = 0;
+  keys.forEach(function(k) {
+    compressImage(imageMap[k], function(compressed) {
+      verbatimImageMap[k] = compressed;
+      completed++;
+      if (onProgress) onProgress(completed, keys.length);
+      if (completed === keys.length) onDone(keys.length);
+    });
+  });
+}
+
 // ── Handle document upload ────────────────────────────────────
 function aiHandleDocUpload(input) {
   if (!input.files || !input.files[0]) return;
@@ -8376,16 +8601,17 @@ function aiHandleDocUpload(input) {
   if (statusEl) statusEl.style.display = 'block';
   if (infoEl)   infoEl.textContent = 'Reading: ' + file.name + '...';
 
-  function done(text) {
-    aiDocContent = text ? text.slice(0, 50000) : '';
+  function done(text, imgCount) {
+    aiDocContent = text ? text.slice(0, 120000) : ''; // higher cap than before — diagram markers add length for large papers
     // Put extracted text into pasted content field too (editable)
     var pc = document.getElementById('ai-pasted-content');
     if (pc && aiDocContent) pc.value = aiDocContent;
-    if (infoEl) infoEl.innerHTML = '<span style="color:#1a7a3f;">&#10003; Loaded: ' + escHtml(aiDocName) + '</span> &bull; <span style="color:#8899cc;">' + (aiDocContent.length || 0) + ' characters extracted</span>';
+    var imgNote = imgCount ? (' &bull; <span style="color:#1a7a3f;">' + imgCount + ' diagram' + (imgCount!==1?'s':'') + ' extracted &amp; attached automatically</span>') : '';
+    if (infoEl) infoEl.innerHTML = '<span style="color:#1a7a3f;">&#10003; Loaded: ' + escHtml(aiDocName) + '</span> &bull; <span style="color:#8899cc;">' + (aiDocContent.length || 0) + ' characters extracted</span>' + imgNote;
     if (!aiDocContent) {
       if (infoEl) infoEl.innerHTML += '<br><span style="color:#e74c3c;">Could not extract text. Try pasting content manually.</span>';
     }
-    showToast('Document loaded: ' + aiDocName);
+    showToast('Document loaded: ' + aiDocName + (imgCount ? ' (' + imgCount + ' diagram' + (imgCount!==1?'s':'') + ')' : ''));
   }
 
   if (ext === 'pdf') {
@@ -8393,15 +8619,26 @@ function aiHandleDocUpload(input) {
     aiReadTextFile(file, function(raw) {
       // Basic PDF text extraction — strip binary, keep readable chars
       var visible = raw.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim();
-      done(visible.length > 100 ? visible : '');
+      done(visible.length > 100 ? visible : '', 0);
     });
-  } else if (ext === 'docx' || ext === 'doc') {
-    aiReadDocxText(file, done);
+  } else if (ext === 'docx') {
+    aiReadDocxWithImages(file, function(result) {
+      var n = Object.keys(result.images).length;
+      if (n === 0) { done(result.text, 0); return; }
+      if (infoEl) infoEl.textContent = 'Extracting ' + n + ' diagram(s)...';
+      compressAndStoreVerbatimImages(result.images, function(done_, total) {
+        if (infoEl) infoEl.textContent = 'Extracting diagrams... ' + done_ + ' / ' + total;
+      }, function(count) {
+        done(result.text, count);
+      });
+    });
+  } else if (ext === 'doc') {
+    aiReadDocxText(file, function(text) { done(text, 0); });
   } else if (ext === 'rtf') {
-    aiReadTextFile(file, function(raw) { done(aiStripRTF(raw)); });
+    aiReadTextFile(file, function(raw) { done(aiStripRTF(raw), 0); });
   } else {
     // Plain text / other
-    aiReadTextFile(file, done);
+    aiReadTextFile(file, function(text) { done(text, 0); });
   }
   input.value = '';
 }
